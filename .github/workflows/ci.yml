@@ -39,7 +39,7 @@ jobs:
       CAPATAZ_CELERY_QUEUE: automation
       CAPATAZ_LOG_JSON: "false"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
@@ -70,7 +70,7 @@ jobs:
       run:
         working-directory: runner
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
@@ -88,7 +88,7 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -107,7 +107,7 @@ jobs:
   #   runs-on: ubuntu-24.04
   #   timeout-minutes: 25
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@v7
   #     - uses: actions/setup-node@v7
   #       with:
   #         node-version: 22
@@ -161,7 +161,7 @@ jobs:
       matrix:
         component: [api, runner, frontend]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v3
       - name: Construir imagen
         uses: docker/build-push-action@v7
@@ -175,7 +175,7 @@ jobs:
     name: Validar configuración Compose
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Crear ficheros de secretos de validación
         run: |
           mkdir -p secrets

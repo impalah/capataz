@@ -1,4 +1,4 @@
-FROM ghcr.io/astral-sh/uv:0.10.12-python3.14-trixie-slim AS builder
+FROM ghcr.io/astral-sh/uv:0.12.3-python3.14-trixie-slim AS builder
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 COPY pyproject.toml uv.lock README.md ./

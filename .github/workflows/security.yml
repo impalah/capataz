@@ -1,11 +1,13 @@
 name: Security
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-  schedule:
-    - cron: '23 4 * * 1'
+  # Temporarily disabled (auto-triggers were blocking every PR/push) — run manually via
+  # workflow_dispatch for now. Re-enable once stable.
+  # push:
+  #   branches: [main]
+  # pull_request:
+  # schedule:
+  #   - cron: '23 4 * * 1'
   workflow_dispatch:
 
 permissions:

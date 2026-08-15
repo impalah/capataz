@@ -35,7 +35,7 @@ jobs:
       - name: Construir imagen local
         run: docker build --tag capataz-${{ matrix.component }}:scan ./${{ matrix.component }}
       - name: Analizar vulnerabilidades sin publicar
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: capataz-${{ matrix.component }}:scan
           format: table

@@ -5,7 +5,7 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM nginxinc/nginx-unprivileged:1.27.4-alpine3.21
+FROM nginxinc/nginx-unprivileged:1.28.0-alpine3.21
 USER root
 # gettext provides envsubst, used to render runtime config.js from CAPATAZ_FRONTEND_* env vars
 # at container start — see frontend/nginx/40-render-runtime-config.sh and

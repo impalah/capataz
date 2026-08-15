@@ -7,10 +7,10 @@ from capataz_api.domain.exceptions import ValidationError
 
 
 def validate_health_url(url: str, allowed_suffixes: tuple[str, ...]) -> None:
-    """Validate scheme/host before probing; see docs/06-security.en.md for the residual DNS-rebinding
-    risk (this checks the hostname string, not the IP httpx actually resolves and connects to;
-    accepted given the closed homelab trust model where suffix-allow-listed DNS is operator-owned
-    — CR-038 in docs/code-review-2026-08.md)."""
+    """Validate scheme/host before probing; see docs/06-security.en.md for the residual
+    DNS-rebinding risk (this checks the hostname string, not the IP httpx actually
+    resolves and connects to; accepted given the closed homelab trust model where
+    suffix-allow-listed DNS is operator-owned — CR-038 in docs/code-review-2026-08.md)."""
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ValidationError("Health URL must use http or https and include a hostname")

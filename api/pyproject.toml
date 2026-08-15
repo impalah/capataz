@@ -57,6 +57,9 @@ source = ["capataz_api"]
 [tool.ruff]
 line-length = 100
 target-version = "py314"
+# Auto-generated Alembic migrations aren't hand-maintained code; mypy already
+# excludes them below. Consistent with never editing an applied migration.
+exclude = ["alembic"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC"]

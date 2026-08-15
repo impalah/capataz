@@ -67,7 +67,9 @@ class Settings(BaseSettings):
         return value
 
     @field_validator(
-        "execution_timeout_seconds", "celery_soft_time_limit_seconds", "celery_hard_time_limit_seconds"
+        "execution_timeout_seconds",
+        "celery_soft_time_limit_seconds",
+        "celery_hard_time_limit_seconds",
     )
     @classmethod
     def validate_positive_timeout(cls, value: int) -> int:

@@ -70,7 +70,7 @@ npm run build                # vue-tsc --noEmit && vite build
 npm run lint                 # eslint --max-warnings=0
 npm run format / format:check   # prettier
 npm run typecheck            # vue-tsc --noEmit
-npm run test:unit -- --run --coverage   # vitest with coverage (CI form)
+npm run test:unit            # vitest run --coverage (already the CI form)
 npx vitest run tests/unit/AuthStore.spec.ts   # single unit test file
 npm run e2e                  # playwright test (make -C frontend e2e)
 npx playwright test tests/e2e/capataz.spec.ts -g "name"   # single e2e test

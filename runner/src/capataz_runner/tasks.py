@@ -180,7 +180,9 @@ async def _process_execution_with_disposal(execution_id: str, settings: Settings
     """
     engine, factory = create_engine_and_session_factory(settings.database_url)
     try:
-        return await process_execution_async(execution_id, settings=settings, session_factory=factory)
+        return await process_execution_async(
+            execution_id, settings=settings, session_factory=factory
+        )
     finally:
         await engine.dispose()
 

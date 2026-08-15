@@ -33,7 +33,12 @@ def test_settings_reject_invalid_operational_values(field: str, value: object) -
 
 
 @pytest.mark.parametrize(
-    "field", ["execution_timeout_seconds", "celery_soft_time_limit_seconds", "celery_hard_time_limit_seconds"]
+    "field",
+    [
+        "execution_timeout_seconds",
+        "celery_soft_time_limit_seconds",
+        "celery_hard_time_limit_seconds",
+    ],
 )
 def test_settings_reject_non_positive_timeouts(field: str) -> None:
     with pytest.raises(ValueError):

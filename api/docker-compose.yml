@@ -1,0 +1,193 @@
+# Stack standalone del módulo api: levanta ÚNICAMENTE `api` junto con su propio PostgreSQL y
+# Redis dedicados (no compartidos con el runner/docker-compose.yml ni con el stack raíz) — pensado
+# para desarrollar/probar la API de forma aislada (curl/Postman contra /api/v1, Alembic, etc.)
+# sin construir frontend ni runner. Para el stack integrado completo usa el docker-compose.yml de
+# la raíz del repo (`make up`).
+#
+# Requisitos previos (una sola vez, en la raíz del repo — ver README.md):
+#   cp .env.example .env && mkdir -p secrets && <generar secretos como indica el Quick start>
+#
+# Uso:
+#   docker compose --env-file ../.env -f docker-compose.yml up -d --build
+#   docker compose --env-file ../.env -f docker-compose.yml down
+#
+# --env-file ../.env es lo que hace que los "${VAR:-default}" de abajo tomen los valores del
+# .env de la raíz en vez de sus defaults; sin él, este fichero sigue siendo autoexplicativo y
+# funciona igualmente con los defaults embebidos.
+name: capataz-api
+
+x-api-env: &api-env
+  CAPATAZ_ENV: ${CAPATAZ_ENV:-production}
+  CAPATAZ_LOG_LEVEL: ${CAPATAZ_LOG_LEVEL:-INFO}
+  CAPATAZ_LOG_JSON: ${CAPATAZ_LOG_JSON:-true}
+  CAPATAZ_API_HOST: ${CAPATAZ_API_HOST:-0.0.0.0}
+  CAPATAZ_API_PORT: ${CAPATAZ_API_PORT:-8000}
+  CAPATAZ_CORS_ORIGINS: ${CAPATAZ_CORS_ORIGINS:-http://localhost:8080}
+  CAPATAZ_CELERY_QUEUE: ${CAPATAZ_CELERY_QUEUE:-automation}
+  CAPATAZ_CELERY_CONCURRENCY: ${CAPATAZ_CELERY_CONCURRENCY:-2}
+  CAPATAZ_PORTAINER_URL: ${CAPATAZ_PORTAINER_URL:-https://portainer.home.arpa}
+  CAPATAZ_GRAFANA_URL: ${CAPATAZ_GRAFANA_URL:-https://grafana.home.arpa}
+  CAPATAZ_LOKI_URL: ${CAPATAZ_LOKI_URL:-https://loki.home.arpa}
+  CAPATAZ_PROMETHEUS_URL: ${CAPATAZ_PROMETHEUS_URL:-https://prometheus.home.arpa}
+  CAPATAZ_COGNITO_REGION: ${CAPATAZ_COGNITO_REGION:-eu-west-1}
+  CAPATAZ_COGNITO_USER_POOL_ID: ${CAPATAZ_COGNITO_USER_POOL_ID:-}
+  CAPATAZ_COGNITO_APP_CLIENT_ID: ${CAPATAZ_COGNITO_APP_CLIENT_ID:-}
+  CAPATAZ_OIDC_ISSUER: ${CAPATAZ_OIDC_ISSUER:-}
+  CAPATAZ_OIDC_AUDIENCE: ${CAPATAZ_OIDC_AUDIENCE:-}
+  CAPATAZ_OIDC_JWKS_URI: ${CAPATAZ_OIDC_JWKS_URI:-}
+  CAPATAZ_OIDC_GROUPS_CLAIM: ${CAPATAZ_OIDC_GROUPS_CLAIM:-groups}
+  CAPATAZ_AUTH_MODE: ${CAPATAZ_AUTH_MODE:-cognito}
+  CAPATAZ_INITIAL_CATALOG_YAML_PATH: ${CAPATAZ_INITIAL_CATALOG_YAML_PATH:-/app/catalog/services.example.yaml}
+  CAPATAZ_HTTP_TIMEOUT_SECONDS: ${CAPATAZ_HTTP_TIMEOUT_SECONDS:-5}
+  CAPATAZ_HEALTH_ALLOWED_HOST_SUFFIXES: ${CAPATAZ_HEALTH_ALLOWED_HOST_SUFFIXES:-.home.arpa}
+  CAPATAZ_STATUS_CACHE_TTL_SECONDS: ${CAPATAZ_STATUS_CACHE_TTL_SECONDS:-30}
+  SSL_CERT_FILE: ${SSL_CERT_FILE:-}
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: capataz-api:local
+    environment: *api-env
+    ports:
+      - "8000:8000"
+    networks:
+      - internal
+    volumes:
+      - ../catalog:/app/catalog:ro
+      - ./alembic.ini:/app/alembic.ini:ro
+      - ./alembic:/app/alembic:ro
+      - ../certs:/run/ca-certs:ro
+    secrets:
+      - database_url
+      - redis_url
+      - portainer_token
+      - cognito_client_secret
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command:
+      - /bin/sh
+      - -ec
+      - >-
+        alembic upgrade head &&
+        exec uvicorn capataz_api.main:app --host 0.0.0.0 --port 8000
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3)\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 768M
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${CAPATAZ_POSTGRES_DB:-capataz}
+      POSTGRES_USER: ${CAPATAZ_POSTGRES_USER:-capataz}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    networks:
+      - internal
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    secrets:
+      - postgres_password
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Ver docker-compose.yml de la raíz: el entrypoint oficial de postgres necesita estas
+    # capabilities en el primer arranque para chown/chmod el volumen y hacer gosu al usuario postgres.
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETUID
+      - SETGID
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1024M
+
+  redis:
+    image: redis:7-alpine
+    command:
+      - /bin/sh
+      - -ec
+      - exec redis-server --appendonly yes --requirepass "$$(cat /run/secrets/redis_password)"
+    networks:
+      - internal
+    volumes:
+      - redis_data:/data
+    secrets:
+      - redis_password
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETUID
+      - SETGID
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/redis_password)\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+
+secrets:
+  postgres_password:
+    file: ../secrets/postgres_password
+  redis_password:
+    file: ../secrets/redis_password
+  database_url:
+    file: ../secrets/database_url
+  redis_url:
+    file: ../secrets/redis_url
+  portainer_token:
+    file: ../secrets/portainer_token
+  cognito_client_secret:
+    file: ../secrets/cognito_client_secret

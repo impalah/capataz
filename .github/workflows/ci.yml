@@ -1,0 +1,181 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (lint, tipos, tests y cobertura)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: api
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: capataz
+          POSTGRES_USER: capataz
+          POSTGRES_PASSWORD: capataz-ci-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U capataz -d capataz"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+    env:
+      CAPATAZ_ENV: development
+      CAPATAZ_AUTH_MODE: dev_mock
+      CAPATAZ_CELERY_QUEUE: automation
+      CAPATAZ_LOG_JSON: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: api/uv.lock
+      - name: Preparar secretos de prueba no sensibles
+        run: |
+          mkdir -p /tmp/capataz-secrets
+          printf 'postgresql+asyncpg://capataz:capataz-ci-password@localhost:5432/capataz' > /tmp/capataz-secrets/database_url
+          printf 'redis://:redis-ci-password@localhost:6379/0' > /tmp/capataz-secrets/redis_url
+          printf 'test-token' > /tmp/capataz-secrets/portainer_token
+          printf 'test-secret' > /tmp/capataz-secrets/cognito_client_secret
+          export CAPATAZ_SECRETS_DIR=/tmp/capataz-secrets
+          echo "CAPATAZ_SECRETS_DIR=$CAPATAZ_SECRETS_DIR" >> "$GITHUB_ENV"
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy src
+      - run: uv run pytest tests/architecture -q --no-cov
+      - run: uv run pytest tests/unit -q --cov=capataz_api --cov-report=term-missing --cov-fail-under=80
+      - run: uv run pytest tests/integration -q
+
+  runner:
+    name: Runner (lint, tipos y tests)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: runner
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: runner/uv.lock
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy src
+      - run: uv run pytest -q
+
+  frontend:
+    name: Frontend (lint, tipos, tests y build)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:unit -- --run --coverage
+      - run: npm run build
+
+  e2e:
+    name: E2E (Compose + Playwright)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Crear configuración y secretos de CI
+        run: |
+          cp .env.example .env
+          mkdir -p secrets
+          printf 'capataz-ci-postgres-password' > secrets/postgres_password
+          printf 'capataz-ci-redis-password' > secrets/redis_password
+          printf 'postgresql+asyncpg://capataz:capataz-ci-postgres-password@postgres:5432/capataz' > secrets/database_url
+          printf 'redis://:capataz-ci-redis-password@redis:6379/0' > secrets/redis_url
+          printf 'ci-placeholder-portainer-token' > secrets/portainer_token
+          printf 'ci-placeholder-cognito-secret' > secrets/cognito_client_secret
+          printf 'ci-placeholder-ssh-key' > secrets/runner_ssh_private_key
+          printf 'ci.example ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIci' > secrets/runner_known_hosts
+          printf 'ci-vault-password' > secrets/ansible_vault_password
+          chmod 600 secrets/*
+      - name: Instalar dependencias y navegador
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Levantar stack de prueba
+        run: |
+          docker compose up --build -d
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://localhost:8000/health/ready >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          docker compose logs
+          exit 1
+      - name: Aplicar migraciones
+        run: docker compose exec -T api uv run alembic upgrade head
+      - name: Ejecutar Playwright
+        working-directory: frontend
+        run: npx playwright test
+      - name: Recoger logs si falla
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Bajar stack
+        if: always()
+        run: docker compose down --volumes --remove-orphans
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [api, runner, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Construir imagen
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.component }}
+          file: ./${{ matrix.component }}/Dockerfile
+          push: false
+          tags: capataz-${{ matrix.component }}:ci
+
+  compose-config:
+    name: Validar configuración Compose
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Crear ficheros de secretos de validación
+        run: |
+          mkdir -p secrets
+          for secret in postgres_password redis_password database_url redis_url portainer_token cognito_client_secret runner_ssh_private_key runner_known_hosts ansible_vault_password; do
+            printf 'validation-only' > "secrets/$secret"
+          done
+      - run: docker compose config --quiet

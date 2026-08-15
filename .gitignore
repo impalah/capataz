@@ -1,0 +1,46 @@
+# Dependencies and build artefacts
+node_modules/
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+build/
+coverage/
+htmlcov/
+.coverage
+coverage.xml
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.import_linter_cache/
+.playwright/
+test-results/
+
+# SonarQube scanner working directories (local task state, no credentials,
+# but reveals the operator's private SonarQube host — regenerated on every run)
+.sonar/
+.scannerwork/
+
+# Generated analysis output (e.g. the /graphify skill's knowledge-graph cache)
+graphify-out/
+
+# Claude Code local/private settings (machine- or user-specific; a shared
+# .claude/settings.json, if one is added later, is meant to be versioned)
+.claude/settings.local.json
+
+# Environment and local secrets (.gitkeep remains versioned)
+.env
+.env.*
+!.env.example
+secrets/*
+!secrets/.gitkeep
+
+# Locally-trusted internal CA bundle (public cert, but host/homelab-specific — see `make trust-ca`)
+certs/*
+!certs/.gitkeep
+
+# IDE and OS files
+.DS_Store
+.idea/
+.vscode/
+*.swp

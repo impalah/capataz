@@ -1,0 +1,12 @@
+// Rendered by frontend/nginx/40-render-runtime-config.sh (envsubst) at container start, from
+// CAPATAZ_FRONTEND_* environment variables — see docker-compose.yml and
+// docs/adr/007-runtime-frontend-config.en.md. Never hand-edit the rendered output inside a running
+// container; change the environment variables and recreate the container instead.
+window.__APP_CONFIG__ = {
+  API_BASE_URL: "${CAPATAZ_FRONTEND_API_BASE_URL}",
+  USE_MSW: ${CAPATAZ_FRONTEND_USE_MSW},
+  DEV_USER: "${CAPATAZ_FRONTEND_DEV_USER}",
+  OIDC_ISSUER: "${CAPATAZ_FRONTEND_OIDC_ISSUER}",
+  OIDC_CLIENT_ID: "${CAPATAZ_FRONTEND_OIDC_CLIENT_ID}",
+  OIDC_SCOPE: "${CAPATAZ_FRONTEND_OIDC_SCOPE}",
+}

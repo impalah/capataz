@@ -1,0 +1,60 @@
+# Stack standalone del módulo frontend: levanta ÚNICAMENTE `frontend`, sin api/runner/postgres/
+# redis — no tiene secretos propios (ver docker-compose.yml de la raíz: el servicio frontend no
+# declara "secrets:").
+#
+# frontend/nginx/default.conf trae compilado un `proxy_pass http://api:8000;` fijo (no usa una
+# variable + resolver de nginx), así que nginx necesita poder resolver el nombre "api" para
+# arrancar, aunque no reciba tráfico en /api/. extra_hosts de abajo resuelve "api" contra la
+# puerta de enlace del host (host-gateway, Docker Engine >=20.10) por defecto, así que:
+#   - Si tienes `api/docker-compose.yml` (o el stack raíz) corriendo y publicando el puerto 8000
+#     en el host, /api/ funciona de verdad sin tocar nada.
+#   - Si no, nginx arranca igualmente (sirve el SPA estático) y /api/ simplemente devolverá error
+#     de conexión hasta que levantes una api en ese puerto — útil para maquetar/probar UI sola.
+# Sobreescribe CAPATAZ_FRONTEND_API_HOST en .env si tu api standalone vive en otra IP/host.
+#
+# Uso:
+#   docker compose --env-file ../.env -f docker-compose.yml up -d --build
+#   docker compose --env-file ../.env -f docker-compose.yml down
+name: capataz-frontend
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: capataz-frontend:local
+    environment:
+      CAPATAZ_FRONTEND_API_BASE_URL: ${CAPATAZ_FRONTEND_API_BASE_URL:-/api/v1}
+      CAPATAZ_FRONTEND_USE_MSW: ${CAPATAZ_FRONTEND_USE_MSW:-false}
+      CAPATAZ_FRONTEND_DEV_USER: ${CAPATAZ_FRONTEND_DEV_USER:-ana.admin}
+      CAPATAZ_FRONTEND_OIDC_ISSUER: ${CAPATAZ_FRONTEND_OIDC_ISSUER:-}
+      CAPATAZ_FRONTEND_OIDC_CLIENT_ID: ${CAPATAZ_FRONTEND_OIDC_CLIENT_ID:-}
+      CAPATAZ_FRONTEND_OIDC_SCOPE: ${CAPATAZ_FRONTEND_OIDC_SCOPE:-openid profile email groups}
+    extra_hosts:
+      - "api:${CAPATAZ_FRONTEND_API_HOST:-host-gateway}"
+    ports:
+      - "${CAPATAZ_FRONTEND_PORT:-8090}:80"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+      - /var/cache/nginx:rw,noexec,nosuid,size=32m
+      - /var/run:rw,noexec,nosuid,size=8m
+      - /config-runtime:rw,noexec,nosuid,size=1m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:80/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M

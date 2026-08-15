@@ -1,0 +1,1280 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Capataz · Design System</title>
+    <link rel="preconnect" href="https://api.fontshare.com" />
+    <link
+      href="https://api.fontshare.com/v2/css?f[]=general-sans@500,600,700&f[]=satoshi@400,500,700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/icon?family=Material+Icons"
+      rel="stylesheet"
+    />
+    <style>
+      /* ==== Tokens copiados literalmente de src/styles/app.scss ==== */
+      :root {
+        --text-xs: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);
+        --text-sm: clamp(0.875rem, 0.8rem + 0.35vw, 1rem);
+        --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+        --text-lg: clamp(1.125rem, 1rem + 0.75vw, 1.5rem);
+        --text-xl: clamp(1.5rem, 1.2rem + 1.25vw, 2.25rem);
+        --space-1: 0.25rem;
+        --space-2: 0.5rem;
+        --space-3: 0.75rem;
+        --space-4: 1rem;
+        --space-5: 1.25rem;
+        --space-6: 1.5rem;
+        --space-8: 2rem;
+        --space-10: 2.5rem;
+        --space-12: 3rem;
+        --radius-sm: 0.375rem;
+        --radius-md: 0.5rem;
+        --radius-lg: 0.75rem;
+        --font-body: 'Satoshi', 'Segoe UI', sans-serif;
+        --font-display: 'General Sans', 'Segoe UI', sans-serif;
+        --color-bg: #101618;
+        --color-surface: #182023;
+        --color-surface-2: #1d282c;
+        --color-border: #344245;
+        --color-text: #e7eceb;
+        --color-text-muted: #aab7b8;
+        --color-primary: #64aab0;
+        --color-error: #e18080;
+        --color-success: #8ac47d;
+        --color-accent-text: #a8dce0;
+        /* Naranja de marca (logo/favicon) — fijo en ambos temas, no se retema abajo. */
+        --color-brand: #ff6600;
+        /* Paleta semántica de Quasar, sin modificar por el proyecto (§2.2 del .md) */
+        --q-primary: #1976d2;
+        --q-positive: #21ba45;
+        --q-negative: #c10015;
+        --q-warning: #f2c037;
+        --q-info: #31ccec;
+        --q-grey-7: #616161;
+      }
+      body.body--light {
+        --color-bg: #f4f6f6;
+        --color-surface: #ffffff;
+        --color-surface-2: #eef1f1;
+        --color-border: #d7dfe0;
+        --color-text: #16211f;
+        --color-text-muted: #55676a;
+        --color-primary: #2f7d84;
+        --color-error: #b3261e;
+        --color-success: #1f6b3a;
+        --color-accent-text: #0f6b73;
+      }
+
+      /* ==== Base, igual que app.scss ==== */
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        -webkit-font-smoothing: antialiased;
+      }
+      body {
+        margin: 0;
+        background: var(--color-bg);
+        color: var(--color-text);
+        font-family: var(--font-body);
+        font-size: var(--text-base);
+        line-height: 1.5;
+        transition:
+          background-color 0.15s ease,
+          color 0.15s ease;
+      }
+      code {
+        color: var(--color-accent-text);
+      }
+      :focus-visible {
+        outline: 2px solid var(--color-primary);
+        outline-offset: 3px;
+      }
+
+      /* ==== Chrome propio de este documento (no forma parte del design system de Capataz) ==== */
+      .guide-shell {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: clamp(var(--space-6), 4vw, var(--space-12));
+        padding-top: var(--space-10);
+      }
+      .guide-topbar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-4);
+        padding: var(--space-3) clamp(var(--space-6), 4vw, var(--space-12));
+        background: var(--color-surface);
+        border-bottom: 1px solid var(--color-border);
+      }
+      .guide-brand {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        font-family: var(--font-display);
+        font-size: 1.05rem;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+      }
+      .guide-brand svg {
+        width: 24px;
+        height: 24px;
+        color: var(--color-text);
+      }
+      .guide-brand small {
+        color: var(--color-text-muted);
+        font-weight: 500;
+        font-size: var(--text-xs);
+        letter-spacing: 0;
+      }
+      .theme-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-2);
+        padding: var(--space-2) var(--space-3);
+        background: transparent;
+        color: var(--color-text);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        font: inherit;
+        font-size: var(--text-xs);
+        cursor: pointer;
+      }
+      .theme-toggle:hover {
+        border-color: var(--color-primary);
+      }
+      .guide-nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+        margin: 0 0 var(--space-10);
+      }
+      .guide-nav a {
+        padding: var(--space-1) var(--space-3);
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+        text-decoration: none;
+        border: 1px solid var(--color-border);
+        border-radius: 999px;
+      }
+      .guide-nav a:hover {
+        color: var(--color-accent-text);
+        border-color: var(--color-accent-text);
+      }
+      section.guide-section {
+        margin-bottom: var(--space-12);
+        scroll-margin-top: 88px;
+      }
+      .guide-eyebrow {
+        margin: 0 0 var(--space-2);
+        color: var(--color-accent-text);
+        font-size: var(--text-xs);
+        font-weight: 700;
+        letter-spacing: 0.14em;
+      }
+      section.guide-section h2 {
+        margin: 0 0 var(--space-2);
+        font-family: var(--font-display);
+        font-size: var(--text-xl);
+        font-weight: 650;
+        letter-spacing: -0.04em;
+      }
+      .guide-section-intro {
+        max-width: 70ch;
+        margin: 0 0 var(--space-6);
+        color: var(--color-text-muted);
+        font-size: var(--text-sm);
+      }
+      .subhead {
+        margin: var(--space-8) 0 var(--space-3);
+        font-family: var(--font-display);
+        font-size: var(--text-lg);
+        letter-spacing: -0.02em;
+      }
+      .subhead:first-of-type {
+        margin-top: 0;
+      }
+      .note {
+        margin: var(--space-3) 0 0;
+        padding: var(--space-3) var(--space-4);
+        background: var(--color-surface-2);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+      }
+      .note strong {
+        color: var(--color-text);
+      }
+
+      /* ---- Color swatches ---- */
+      .swatch-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: var(--space-4);
+      }
+      .swatch {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+        background: var(--color-surface);
+      }
+      .swatch-fill {
+        height: 64px;
+      }
+      .swatch-meta {
+        padding: var(--space-3);
+      }
+      .swatch-meta code {
+        display: block;
+        margin-bottom: 2px;
+        font-size: var(--text-xs);
+      }
+      .swatch-meta .hex {
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+      }
+      .swatch-meta .usage {
+        margin-top: var(--space-2);
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+        line-height: 1.4;
+      }
+
+      /* ---- Type scale ---- */
+      .type-row {
+        display: flex;
+        align-items: baseline;
+        gap: var(--space-6);
+        padding: var(--space-4) 0;
+        border-bottom: 1px solid var(--color-border);
+      }
+      .type-row:last-child {
+        border-bottom: none;
+      }
+      .type-row .label {
+        flex: 0 0 220px;
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+      }
+      .type-row .sample.display {
+        font-family: var(--font-display);
+      }
+      .type-row .sample.body {
+        font-family: var(--font-body);
+      }
+
+      /* ---- Spacing / radius swatches ---- */
+      .scale-row {
+        display: flex;
+        align-items: center;
+        gap: var(--space-4);
+        padding: var(--space-2) 0;
+      }
+      .scale-row .label {
+        flex: 0 0 160px;
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+      }
+      .scale-bar {
+        height: 20px;
+        background: var(--color-primary);
+        border-radius: 3px;
+      }
+      .radius-demo {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-6);
+      }
+      .radius-box {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--space-2);
+      }
+      .radius-box .box {
+        width: 72px;
+        height: 72px;
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+      }
+      .radius-box .label {
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+      }
+
+      /* ---- Component gallery shell ---- */
+      .gallery {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: var(--space-5);
+      }
+      .gallery-card {
+        padding: var(--space-5);
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+      }
+      .gallery-card .gc-label {
+        margin: 0 0 var(--space-3);
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .gallery-card.stack {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-3);
+      }
+      .gallery-card.row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--space-3);
+      }
+
+      /* ---- Real component styles, copied from app.scss ---- */
+      .header-demo {
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+        padding: var(--space-3) var(--space-4);
+        background: var(--color-surface);
+        color: var(--color-text);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        color: var(--color-text);
+        font-family: var(--font-display);
+        font-size: 1.25rem;
+        font-weight: 700;
+        text-decoration: none;
+        letter-spacing: -0.04em;
+      }
+      .brand svg {
+        width: 32px;
+        height: 32px;
+      }
+      .header-spacer {
+        flex: 1;
+      }
+      .icon-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        color: var(--color-text);
+        background: transparent;
+        border: none;
+        border-radius: 50%;
+        cursor: pointer;
+      }
+      .icon-btn:hover {
+        background: rgba(127, 127, 127, 0.12);
+      }
+
+      .drawer-demo {
+        display: flex;
+        flex-direction: column;
+        width: 248px;
+        padding: var(--space-3) 0;
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+      }
+      .drawer-title {
+        padding: var(--space-2) var(--space-4);
+        letter-spacing: 0.13em;
+        font-size: var(--text-xs);
+        color: var(--color-text-muted);
+      }
+      .drawer-item {
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+        padding: var(--space-2) var(--space-4);
+        margin: 0 var(--space-2);
+        color: var(--color-text);
+        text-decoration: none;
+        font-size: var(--text-sm);
+        border-radius: var(--radius-sm);
+      }
+      .drawer-item .material-icons {
+        font-size: 20px;
+        color: var(--color-text-muted);
+      }
+      .nav-active {
+        background: rgba(100, 170, 176, 0.15);
+        color: var(--color-accent-text);
+        border-radius: var(--radius-sm);
+      }
+      .nav-active .material-icons {
+        color: var(--color-accent-text);
+      }
+      .drawer-foot {
+        margin-top: auto;
+        padding: var(--space-4);
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+      }
+      .drawer-foot p {
+        margin: var(--space-3) 0 0;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 10px;
+        font-size: var(--text-xs);
+        border-radius: 999px;
+        background: var(--color-surface-2);
+        color: var(--color-text);
+      }
+      .chip.outline {
+        background: transparent;
+        border: 1px solid var(--color-border);
+      }
+
+      .eyebrow {
+        margin: 0 0 var(--space-2);
+        color: var(--color-accent-text);
+        font-size: var(--text-xs);
+        font-weight: 700;
+        letter-spacing: 0.14em;
+      }
+      .page-header-demo h1 {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: var(--text-xl);
+        font-weight: 650;
+        letter-spacing: -0.04em;
+      }
+      .page-header-demo p {
+        max-width: 65ch;
+        margin: var(--space-2) 0 0;
+        color: var(--color-text-muted);
+      }
+
+      .services-grid-demo {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        gap: var(--space-4);
+      }
+      .service-card,
+      .panel {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+      }
+      .service-card {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        padding: var(--space-4) var(--space-5) var(--space-5);
+      }
+      .card-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        color: var(--color-accent-text);
+      }
+      .card-status {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: var(--space-1);
+      }
+      .card-updated {
+        font-size: 10px;
+        color: var(--color-text-muted);
+      }
+      .service-card h2 {
+        margin: var(--space-2) 0 var(--space-1);
+        font-size: var(--text-lg);
+        font-family: var(--font-display);
+        letter-spacing: -0.02em;
+      }
+      .service-card p {
+        margin: 0;
+        color: var(--color-text-muted);
+        font-size: var(--text-sm);
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .meta {
+        display: flex;
+        gap: var(--space-2);
+        margin-top: var(--space-2);
+      }
+      .card-stack {
+        margin: var(--space-2) 0 0;
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+      }
+      .card-actions {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: var(--space-1);
+        margin-top: var(--space-4);
+      }
+      .round-icon-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        color: var(--color-text);
+        background: transparent;
+        border: none;
+        border-radius: 50%;
+        cursor: pointer;
+      }
+      .round-icon-btn:hover {
+        background: rgba(127, 127, 127, 0.12);
+      }
+      .round-icon-btn .material-icons {
+        font-size: 20px;
+      }
+
+      .panel {
+        padding: var(--space-5);
+      }
+      .panel h2 {
+        margin: 0 0 var(--space-2);
+        font-size: var(--text-lg);
+        font-family: var(--font-display);
+        letter-spacing: -0.02em;
+      }
+      .panel-intro {
+        margin: 0 0 var(--space-3);
+        color: var(--color-text-muted);
+        font-size: var(--text-sm);
+      }
+
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-1);
+        padding: 6px 8px;
+        color: #fff;
+        font-weight: 600;
+        font-size: var(--text-xs);
+        border-radius: 4px;
+      }
+      .status-badge .material-icons {
+        font-size: 14px;
+      }
+      .badge-positive {
+        background: var(--q-positive);
+      }
+      .badge-negative {
+        background: var(--q-negative);
+      }
+      .badge-warning {
+        background: var(--q-warning);
+        color: #201a00;
+      }
+      .badge-info {
+        background: var(--q-info);
+        color: #012;
+      }
+      .badge-grey {
+        background: var(--q-grey-7);
+      }
+      .badge-primary {
+        background: var(--q-primary);
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-2);
+        padding: var(--space-2) var(--space-4);
+        font: inherit;
+        font-size: var(--text-sm);
+        font-weight: 500;
+        color: #fff;
+        background: var(--q-primary);
+        border: none;
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+      }
+      .btn.negative {
+        background: var(--q-negative);
+      }
+      .btn.flat {
+        color: var(--color-text);
+        background: transparent;
+      }
+      .btn.flat:hover {
+        background: rgba(127, 127, 127, 0.12);
+      }
+      .btn:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      .event-log {
+        margin: 0;
+        padding: var(--space-3);
+        max-height: 160px;
+        overflow: auto;
+        white-space: pre-wrap;
+        overflow-wrap: break-word;
+        background: var(--color-bg);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        font-size: var(--text-xs);
+        color: var(--color-text);
+      }
+
+      .error-banner,
+      .success-banner {
+        padding: var(--space-3) var(--space-4);
+        border-radius: var(--radius-sm);
+        font-size: var(--text-sm);
+      }
+      .error-banner {
+        color: #ffe5e5;
+        background: rgba(150, 40, 40, 0.25);
+        border: 1px solid rgba(225, 128, 128, 0.5);
+      }
+      body.body--light .error-banner {
+        color: #7a1f1f;
+      }
+      .success-banner {
+        background: rgba(95, 157, 88, 0.2);
+        border: 1px solid rgba(138, 196, 125, 0.5);
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 220px;
+      }
+      .field label {
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+      }
+      .field input,
+      .field select {
+        padding: var(--space-2) var(--space-3);
+        font: inherit;
+        font-size: var(--text-sm);
+        color: var(--color-text);
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+      }
+      .field input:focus-visible,
+      .field select:focus-visible {
+        outline: 2px solid var(--color-primary);
+        outline-offset: 2px;
+      }
+
+      table.demo-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: var(--text-sm);
+      }
+      table.demo-table th {
+        padding: var(--space-2) var(--space-3);
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+        font-weight: 600;
+        text-align: left;
+        border-bottom: 1px solid var(--color-border);
+      }
+      table.demo-table td {
+        padding: var(--space-2) var(--space-3);
+        border-bottom: 1px solid var(--color-border);
+      }
+      table.demo-table a {
+        color: var(--color-accent-text);
+      }
+
+      .dialog-demo {
+        max-width: 420px;
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+      }
+      .dialog-demo .d-head {
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+        padding: var(--space-4);
+      }
+      .dialog-demo .d-head .material-icons {
+        color: var(--q-negative);
+        font-size: 28px;
+      }
+      .dialog-demo .d-head .title {
+        font-family: var(--font-display);
+        font-size: 1.1rem;
+        font-weight: 700;
+      }
+      .dialog-demo .d-head .subtitle {
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+      }
+      .dialog-demo .d-body {
+        padding: 0 var(--space-4) var(--space-4);
+        color: var(--color-text-muted);
+        font-size: var(--text-sm);
+      }
+      .dialog-demo .d-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: var(--space-2);
+        padding: var(--space-3) var(--space-4);
+        border-top: 1px solid var(--color-border);
+      }
+
+      .empty-state-demo {
+        display: flex;
+        min-height: 180px;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: var(--space-2);
+        text-align: center;
+        color: var(--color-text-muted);
+        border: 1px dashed var(--color-border);
+        border-radius: var(--radius-md);
+      }
+      .empty-state-demo h3 {
+        margin: 0;
+        color: var(--color-text);
+        font-size: var(--text-lg);
+        font-family: var(--font-display);
+      }
+
+      .icon-tile {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--space-1);
+        padding: var(--space-3);
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+      }
+      .icon-tile .material-icons {
+        font-size: 22px;
+        color: var(--color-text);
+      }
+      .icon-tile-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+        gap: var(--space-3);
+      }
+
+      @media (max-width: 680px) {
+        .type-row {
+          flex-direction: column;
+          gap: var(--space-2);
+        }
+        .type-row .label {
+          flex-basis: auto;
+        }
+        .drawer-demo {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body class="body--dark">
+    <div class="guide-topbar">
+      <div class="guide-brand">
+        <svg viewBox="0 0 64 64" aria-hidden="true">
+          <path
+            d="M10 19 L19 14 L23 19 C26 17 29 16 32 16 C35 16 38 17 41 19 L45 14 L54 19 L52 42 C51 51 43 56 32 56 C21 56 13 51 12 42 Z"
+            fill="var(--color-brand)"
+          /><circle cx="23" cy="35" r="10" fill="white" /><circle cx="41" cy="35" r="10" fill="white" /><circle
+            cx="23"
+            cy="35"
+            r="4"
+            fill="var(--color-brand)"
+          /><circle cx="41" cy="35" r="4" fill="var(--color-brand)" /><path
+            d="M32 39 L36 44 L32 48 L28 44 Z"
+            fill="white"
+          />
+        </svg>
+        capataz <small>· design system</small>
+      </div>
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Cambiar tema">
+        <span class="material-icons" id="theme-icon" style="font-size: 18px">light_mode</span>
+        <span id="theme-label">Modo claro</span>
+      </button>
+    </div>
+
+    <div class="guide-shell">
+      <p class="guide-eyebrow">CAPATAZ · FRONTEND</p>
+      <h1 style="font-family: var(--font-display); font-size: var(--text-xl); font-weight: 650; letter-spacing: -0.04em; margin: 0 0 var(--space-2)">
+        Design System
+      </h1>
+      <p class="guide-section-intro" style="margin-bottom: var(--space-6); max-width: 75ch">
+        Extraído del código real de <code>frontend/</code> (Vue 3 + Quasar) el 14/8/2026. Todo lo
+        que ves aquí usa las mismas variables CSS y clases que la aplicación — no son
+        aproximaciones. Usa el botón de arriba para comprobar cualquier sección en claro y
+        oscuro. La referencia narrativa completa está en <code>design-system.md</code>, en esta
+        misma carpeta.
+      </p>
+
+      <nav class="guide-nav" aria-label="Secciones">
+        <a href="#principios">Principios</a>
+        <a href="#color">Color</a>
+        <a href="#tipografia">Tipografía</a>
+        <a href="#espaciado">Espaciado</a>
+        <a href="#radios">Radios</a>
+        <a href="#iconos">Iconos</a>
+        <a href="#componentes">Componentes</a>
+        <a href="#formularios">Formularios</a>
+        <a href="#tabla">Tabla</a>
+        <a href="#estados">Banners &amp; vacíos</a>
+      </nav>
+
+      <section class="guide-section" id="principios">
+        <p class="guide-eyebrow">01</p>
+        <h2>Principios</h2>
+        <p class="guide-section-intro">
+          Capataz es un panel de control operativo, no una app de consumo. Estas reglas se
+          observan de forma consistente en todo el código y deben mantenerse en trabajo nuevo.
+        </p>
+        <div class="gallery">
+          <div class="gallery-card stack">
+            <p class="gc-label">Densidad sobre ornamento</p>
+            <p style="margin: 0; font-size: var(--text-sm); color: var(--color-text-muted)">
+              Rejillas de tarjetas y tablas, sin ilustraciones ni gradientes decorativos.
+            </p>
+          </div>
+          <div class="gallery-card stack">
+            <p class="gc-label">Color = estado, no marca</p>
+            <p style="margin: 0; font-size: var(--text-sm); color: var(--color-text-muted)">
+              El teal de marca es para navegación/foco/enlaces. Verde/rojo/ámbar siempre
+              significan healthy/error/en-progreso.
+            </p>
+          </div>
+          <div class="gallery-card stack">
+            <p class="gc-label">Borde, no sombra</p>
+            <p style="margin: 0; font-size: var(--text-sm); color: var(--color-text-muted)">
+              Ningún componente propio usa <code>box-shadow</code>. La separación viene siempre
+              de <code>border: 1px solid var(--color-border)</code>.
+            </p>
+          </div>
+          <div class="gallery-card stack">
+            <p class="gc-label">Oscuro por defecto</p>
+            <p style="margin: 0; font-size: var(--text-sm); color: var(--color-text-muted)">
+              El modo oscuro es el estado inicial de la app; el claro es la variante explícita.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="guide-section" id="color">
+        <p class="guide-eyebrow">02</p>
+        <h2>Color</h2>
+        <p class="guide-section-intro">
+          Dos sistemas de color conviven: los tokens de marca (variables CSS, retemadas por
+          <code>body.body--light</code>) y la paleta semántica por defecto de Quasar, que no
+          cambia entre temas.
+        </p>
+
+        <p class="subhead">Tokens de marca (cambian con el tema)</p>
+        <div class="swatch-grid" id="brand-swatches"></div>
+
+        <p class="subhead">Paleta semántica de Quasar (fija en ambos temas)</p>
+        <div class="swatch-grid" id="quasar-swatches"></div>
+        <div class="note">
+          <strong>Nota:</strong> los botones de acción ("Ejecutar") y el badge de ejecución
+          <code>running</code> usan el azul por defecto de Quasar (<code>#1976D2</code>), que es
+          un color distinto de <code>--color-primary</code> (el teal de marca, usado para foco,
+          navegación activa y enlaces). Ninguno de los dos es un error — es el estado real del
+          código, documentado en detalle en <code>design-system.md</code> §2.3.
+        </div>
+      </section>
+
+      <section class="guide-section" id="tipografia">
+        <p class="guide-eyebrow">03</p>
+        <h2>Tipografía</h2>
+        <p class="guide-section-intro">
+          <strong>General Sans</strong> (display: h1, h2, marca) + <strong>Satoshi</strong>
+          (cuerpo), cargadas desde Fontshare. Escala fluida con <code>clamp()</code> — sin saltos
+          por breakpoint.
+        </p>
+        <div class="type-row">
+          <span class="label"><code>--text-xl</code> · display 650</span>
+          <span class="sample display" style="font-size: var(--text-xl); font-weight: 650; letter-spacing: -0.04em">Servicios</span>
+        </div>
+        <div class="type-row">
+          <span class="label"><code>--text-lg</code> · display</span>
+          <span class="sample display" style="font-size: var(--text-lg); letter-spacing: -0.02em">Estado por contenedor</span>
+        </div>
+        <div class="type-row">
+          <span class="label"><code>--text-base</code> · body</span>
+          <span class="sample body" style="font-size: var(--text-base)">Texto de cuerpo estándar de la aplicación.</span>
+        </div>
+        <div class="type-row">
+          <span class="label"><code>--text-sm</code> · body muted</span>
+          <span class="sample body" style="font-size: var(--text-sm); color: var(--color-text-muted)">Emisión y validación de claves de API propias.</span>
+        </div>
+        <div class="type-row">
+          <span class="label"><code>--text-xs</code> · eyebrow 700, tracking .14em</span>
+          <span class="sample body eyebrow" style="margin: 0">CONTROL PLANE</span>
+        </div>
+        <div class="type-row">
+          <span class="label">monoespaciada · logs</span>
+          <span class="sample" style="font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: var(--text-xs)">TASK [Gathering Facts] *** ok: [homelab-pi-dns]</span>
+        </div>
+      </section>
+
+      <section class="guide-section" id="espaciado">
+        <p class="guide-eyebrow">04</p>
+        <h2>Espaciado</h2>
+        <p class="guide-section-intro">Escala de 8 pasos en <code>rem</code>.</p>
+        <div id="spacing-scale"></div>
+
+        <p class="subhead" id="radios">Radios</p>
+        <div class="radius-demo">
+          <div class="radius-box"><div class="box" style="border-radius: var(--radius-sm)"></div><span class="label">--radius-sm (6px)</span></div>
+          <div class="radius-box"><div class="box" style="border-radius: var(--radius-md)"></div><span class="label">--radius-md (8px)</span></div>
+          <div class="radius-box"><div class="box" style="border-radius: var(--radius-lg)"></div><span class="label">--radius-lg (12px)</span></div>
+        </div>
+      </section>
+
+      <section class="guide-section" id="iconos">
+        <p class="guide-eyebrow">05</p>
+        <h2>Iconografía</h2>
+        <p class="guide-section-intro">Material Icons. Selección representativa usada en la app real.</p>
+        <div class="icon-tile-grid">
+          <div class="icon-tile"><span class="material-icons">grid_view</span>servicios</div>
+          <div class="icon-tile"><span class="material-icons">receipt_long</span>ejecuciones</div>
+          <div class="icon-tile"><span class="material-icons">inventory_2</span>catálogo</div>
+          <div class="icon-tile"><span class="material-icons">policy</span>auditoría</div>
+          <div class="icon-tile"><span class="material-icons">check_circle</span>healthy</div>
+          <div class="icon-tile"><span class="material-icons">warning</span>degraded</div>
+          <div class="icon-tile"><span class="material-icons">cancel</span>down</div>
+          <div class="icon-tile"><span class="material-icons">build</span>maintenance</div>
+          <div class="icon-tile"><span class="material-icons">help</span>unknown</div>
+          <div class="icon-tile"><span class="material-icons">play_arrow</span>iniciar</div>
+          <div class="icon-tile"><span class="material-icons">dns</span>icono por defecto</div>
+          <div class="icon-tile"><span class="material-icons">verified_user</span>usuario</div>
+        </div>
+
+        <p class="subhead">Logotipo y favicon</p>
+        <div class="gallery-card row">
+          <svg viewBox="0 0 64 64" aria-hidden="true" style="width: 72px; height: 72px; flex: none">
+            <path
+              d="M10 19 L19 14 L23 19 C26 17 29 16 32 16 C35 16 38 17 41 19 L45 14 L54 19 L52 42 C51 51 43 56 32 56 C21 56 13 51 12 42 Z"
+              fill="var(--color-brand)"
+            /><circle cx="23" cy="35" r="10" fill="white" /><circle cx="41" cy="35" r="10" fill="white" /><circle
+              cx="23"
+              cy="35"
+              r="4"
+              fill="var(--color-brand)"
+            /><circle cx="41" cy="35" r="4" fill="var(--color-brand)" /><path
+              d="M32 39 L36 44 L32 48 L28 44 Z"
+              fill="white"
+            />
+          </svg>
+          <p style="margin: 0; max-width: 60ch; font-size: var(--text-sm); color: var(--color-text-muted)">
+            Búho geométrico, único elemento de la interfaz que usa <code>--color-brand</code>
+            (naranja de casco de obra, <code>#ff6600</code>) en vez de <code>currentColor</code>
+            — se ve igual en ambos temas. Fuente vectorial en
+            <code>design-system/capataz-logo.icon.svg</code>; usado inline en el header
+            (<code>AppLayout.vue</code>) y, con el color fijado a mano, como
+            <code>favicon.svg</code> / <code>favicon-32.png</code> / <code>apple-touch-icon.png</code>
+            en <code>public/</code>.
+          </p>
+        </div>
+      </section>
+
+      <section class="guide-section" id="componentes">
+        <p class="guide-eyebrow">06</p>
+        <h2>Componentes</h2>
+        <p class="guide-section-intro">Réplicas fieles de los componentes de <code>src/components</code> y <code>src/layouts</code>.</p>
+
+        <p class="subhead">Header</p>
+        <div class="header-demo">
+          <a class="brand" href="#" onclick="return false">
+            <svg viewBox="0 0 64 64" aria-hidden="true">
+              <path
+                d="M10 19 L19 14 L23 19 C26 17 29 16 32 16 C35 16 38 17 41 19 L45 14 L54 19 L52 42 C51 51 43 56 32 56 C21 56 13 51 12 42 Z"
+                fill="var(--color-brand)"
+              /><circle cx="23" cy="35" r="10" fill="white" /><circle cx="41" cy="35" r="10" fill="white" /><circle
+                cx="23"
+                cy="35"
+                r="4"
+                fill="var(--color-brand)"
+              /><circle cx="41" cy="35" r="4" fill="var(--color-brand)" /><path
+                d="M32 39 L36 44 L32 48 L28 44 Z"
+                fill="white"
+              />
+            </svg>
+            <span>capataz</span>
+          </a>
+          <div class="header-spacer"></div>
+          <button class="icon-btn" aria-label="Activar modo claro"><span class="material-icons">dark_mode</span></button>
+          <button class="icon-btn" aria-label="Cuenta" style="width: auto; padding: 0 var(--space-2); border-radius: var(--radius-sm)">
+            <span class="material-icons">account_circle</span>
+          </button>
+        </div>
+
+        <p class="subhead">Drawer / navegación</p>
+        <div class="drawer-demo">
+          <div class="drawer-title">OPERACIÓN</div>
+          <a class="drawer-item nav-active" href="#" onclick="return false"><span class="material-icons">grid_view</span>Servicios</a>
+          <a class="drawer-item" href="#" onclick="return false"><span class="material-icons">receipt_long</span>Ejecuciones</a>
+          <a class="drawer-item" href="#" onclick="return false"><span class="material-icons">inventory_2</span>Catálogo</a>
+          <a class="drawer-item" href="#" onclick="return false"><span class="material-icons">policy</span>Auditoría</a>
+          <div class="drawer-foot">
+            <span class="chip outline"><span class="material-icons" style="font-size: 14px">verified_user</span>ana@lab.local</span>
+            <p>Las autorizaciones definitivas se aplican en la API.</p>
+          </div>
+        </div>
+
+        <p class="subhead">Cabecera de página</p>
+        <div class="page-header-demo">
+          <p class="eyebrow">CONTROL PLANE</p>
+          <h1>Servicios</h1>
+          <p>Estado operativo de los servicios declarados, sin sustituir a tus herramientas de observabilidad.</p>
+        </div>
+
+        <p class="subhead">Badges de estado — servicio</p>
+        <div class="gallery-card row">
+          <span class="status-badge badge-positive"><span class="material-icons">check_circle</span>Operativo</span>
+          <span class="status-badge badge-warning"><span class="material-icons">warning</span>Degradado</span>
+          <span class="status-badge badge-negative"><span class="material-icons">cancel</span>Caído</span>
+          <span class="status-badge badge-info"><span class="material-icons">build</span>Mantenimiento</span>
+          <span class="status-badge badge-grey"><span class="material-icons">help</span>Desconocido</span>
+        </div>
+
+        <p class="subhead">Badges de estado — ejecución</p>
+        <div class="gallery-card row">
+          <span class="status-badge badge-grey">En cola</span>
+          <span class="status-badge badge-primary">En curso</span>
+          <span class="status-badge badge-positive">Correcta</span>
+          <span class="status-badge badge-negative">Fallida</span>
+          <span class="status-badge badge-grey">Cancelada</span>
+          <span class="status-badge badge-warning">Agotó tiempo</span>
+          <span class="status-badge badge-negative">Rechazada</span>
+        </div>
+
+        <p class="subhead">Botones</p>
+        <div class="gallery-card row">
+          <button class="btn">Ejecutar</button>
+          <button class="btn negative">Ejecutar acción crítica</button>
+          <button class="btn flat">Cancelar</button>
+          <button class="btn" disabled>Deshabilitado</button>
+          <button class="round-icon-btn" aria-label="Iniciar"><span class="material-icons">play_arrow</span></button>
+          <button class="round-icon-btn" aria-label="Detener"><span class="material-icons">stop</span></button>
+          <button class="round-icon-btn" aria-label="Reiniciar"><span class="material-icons">restart_alt</span></button>
+        </div>
+
+        <p class="subhead">Chips</p>
+        <div class="gallery-card row">
+          <span class="chip">homelab</span>
+          <span class="chip outline">producción</span>
+        </div>
+
+        <p class="subhead">Tarjeta de servicio</p>
+        <div class="services-grid-demo" style="max-width: 640px">
+          <article class="service-card">
+            <div class="card-top">
+              <span class="material-icons" style="font-size: 28px">shield</span>
+              <div class="card-status">
+                <span class="status-badge badge-positive"><span class="material-icons">check_circle</span>Operativo</span>
+                <span class="card-updated">12:33</span>
+              </div>
+            </div>
+            <h2>API Key Service</h2>
+            <p>Emisión y validación de claves de API propias; protege servicios sin autenticación nativa</p>
+            <div class="meta">
+              <span class="chip">Seguridad</span>
+              <span class="chip outline">homelab</span>
+            </div>
+            <p class="card-stack">Stack: homelab-pi-dns</p>
+            <div class="card-actions">
+              <button class="round-icon-btn" aria-label="Consultar logs"><span class="material-icons">receipt_long</span></button>
+              <button class="round-icon-btn" aria-label="Reiniciar"><span class="material-icons">restart_alt</span></button>
+              <button class="round-icon-btn" aria-label="Iniciar"><span class="material-icons">play_arrow</span></button>
+              <button class="round-icon-btn" aria-label="Detener"><span class="material-icons">stop</span></button>
+            </div>
+          </article>
+        </div>
+
+        <p class="subhead">Panel</p>
+        <div class="panel" style="max-width: 420px">
+          <h2>Acciones permitidas</h2>
+          <p class="panel-intro">La autorización se verifica de nuevo en la API.</p>
+          <p style="margin: 0; font-size: var(--text-sm); color: var(--color-text-muted)">Reiniciar · portainer · riesgo operate</p>
+        </div>
+
+        <p class="subhead">Log de ejecución</p>
+        <pre class="event-log">TASK [Gathering Facts] ***
+ok: [homelab-pi-dns]
+TASK [restart container] ***
+changed: [homelab-pi-dns]
+PLAY RECAP ***
+homelab-pi-dns : ok=2 changed=1 unreachable=0 failed=0</pre>
+
+        <p class="subhead">Diálogo de confirmación crítica</p>
+        <div class="dialog-demo">
+          <div class="d-head">
+            <span class="material-icons">warning</span>
+            <div>
+              <div class="title">Confirmar acción crítica</div>
+              <div class="subtitle">API Key Service · Detener</div>
+            </div>
+          </div>
+          <div class="d-body">
+            <p>Esta acción puede afectar a la disponibilidad. Indica el motivo para dejar una traza auditable.</p>
+            <div class="field"><label>Motivo (obligatorio)</label><input type="text" placeholder="Ej. mantenimiento programado" /></div>
+          </div>
+          <div class="d-actions">
+            <button class="btn flat">Cancelar</button>
+            <button class="btn negative" disabled>Ejecutar acción crítica</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="guide-section" id="formularios">
+        <p class="guide-eyebrow">07</p>
+        <h2>Formularios</h2>
+        <p class="guide-section-intro">Inputs siempre <code>outlined</code>, borde forzado a <code>--color-border</code>, label en <code>--color-text-muted</code>.</p>
+        <div class="gallery-card row">
+          <div class="field"><label>Buscar servicio</label><input type="text" placeholder="Buscar…" /></div>
+          <div class="field"><label>Grupo</label><select><option>Todos</option><option>Seguridad</option><option>IA</option></select></div>
+          <div class="field" style="min-width: 100px"><label>Autoactualización</label><select><option>30s</option><option>1m</option></select></div>
+        </div>
+      </section>
+
+      <section class="guide-section" id="tabla">
+        <p class="guide-eyebrow">08</p>
+        <h2>Tabla</h2>
+        <p class="guide-section-intro">Patrón usado en Auditoría y Ejecuciones.</p>
+        <table class="demo-table">
+          <thead>
+            <tr><th>Fecha</th><th>Actor</th><th>Acción</th><th>Recurso</th><th>Resultado</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>14/8/2026, 12:21:54</td><td>ana.admin@dev.local</td><td>execution.request</td><td><a href="#" onclick="return false">1c99a78c…</a></td><td><span class="status-badge badge-positive">Correcta</span></td></tr>
+            <tr><td>14/8/2026, 12:16:46</td><td>capataz</td><td>execution.request</td><td><a href="#" onclick="return false">ca1eafe0…</a></td><td><span class="status-badge badge-positive">Correcta</span></td></tr>
+            <tr><td>13/8/2026, 22:00:49</td><td>capataz</td><td>execution.request</td><td><a href="#" onclick="return false">a09e1463…</a></td><td><span class="status-badge badge-negative">Fallida</span></td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="guide-section" id="estados">
+        <p class="guide-eyebrow">09</p>
+        <h2>Banners &amp; estados vacíos</h2>
+        <div class="gallery">
+          <div class="gallery-card stack">
+            <p class="gc-label">Error</p>
+            <div class="error-banner">No se pudo actualizar el estado.</div>
+          </div>
+          <div class="gallery-card stack">
+            <p class="gc-label">Éxito</p>
+            <div class="success-banner">Catálogo importado correctamente.</div>
+          </div>
+        </div>
+        <p class="subhead">Estado vacío</p>
+        <div class="empty-state-demo">
+          <h3>Sin servicios</h3>
+          <p style="margin: 0">Ningún servicio coincide con los filtros actuales.</p>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      const body = document.body;
+      const toggle = document.getElementById('theme-toggle');
+      const icon = document.getElementById('theme-icon');
+      const label = document.getElementById('theme-label');
+
+      function applyTheme(isLight) {
+        body.classList.toggle('body--light', isLight);
+        body.classList.toggle('body--dark', !isLight);
+        icon.textContent = isLight ? 'dark_mode' : 'light_mode';
+        label.textContent = isLight ? 'Modo oscuro' : 'Modo claro';
+      }
+
+      toggle.addEventListener('click', () => {
+        applyTheme(!body.classList.contains('body--light'));
+      });
+
+      applyTheme(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
+
+      const brandTokens = [
+        ['--color-bg', 'Fondo de página'],
+        ['--color-surface', 'Tarjetas, paneles, header'],
+        ['--color-surface-2', 'Superficie secundaria'],
+        ['--color-border', 'Bordes'],
+        ['--color-text', 'Texto principal'],
+        ['--color-text-muted', 'Texto secundario / metadatos'],
+        ['--color-primary', 'Foco, teal de marca (no botones)'],
+        ['--color-error', 'Texto de error (uso puntual)'],
+        ['--color-success', 'Texto de éxito (uso puntual)'],
+        ['--color-accent-text', 'Eyebrows, enlaces, nav activo'],
+        ['--color-brand', 'Logo del header y favicon — fijo, no cambia con el tema'],
+      ];
+      const quasarTokens = [
+        ['--q-primary', 'primary · botones "Ejecutar", badge running'],
+        ['--q-positive', 'positive · healthy / succeeded'],
+        ['--q-negative', 'negative · down / failed / crítico'],
+        ['--q-warning', 'warning · degraded / timed_out'],
+        ['--q-info', 'info · maintenance'],
+        ['--q-grey-7', 'grey-7 · unknown / queued / cancelled'],
+      ];
+
+      function renderSwatches(container, tokens) {
+        const root = getComputedStyle(document.body);
+        container.innerHTML = tokens
+          .map(([varName, usage]) => {
+            return `<div class="swatch">
+              <div class="swatch-fill" style="background: var(${varName})"></div>
+              <div class="swatch-meta">
+                <code>${varName}</code>
+                <div class="usage">${usage}</div>
+              </div>
+            </div>`;
+          })
+          .join('');
+      }
+      renderSwatches(document.getElementById('brand-swatches'), brandTokens);
+      renderSwatches(document.getElementById('quasar-swatches'), quasarTokens);
+
+      const spacing = ['1:4px', '2:8px', '3:12px', '4:16px', '5:20px', '6:24px', '8:32px', '10:40px', '12:48px'];
+      document.getElementById('spacing-scale').innerHTML = spacing
+        .map((s) => {
+          const [n, px] = s.split(':');
+          return `<div class="scale-row">
+            <span class="label"><code>--space-${n}</code> (${px})</span>
+            <div class="scale-bar" style="width: var(--space-${n})"></div>
+          </div>`;
+        })
+        .join('');
+    </script>
+  </body>
+</html>

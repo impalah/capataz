@@ -1,0 +1,17 @@
+---
+- name: Restart one declared service safely
+  hosts: all
+  gather_facts: false
+  vars:
+    service: ""
+  tasks:
+    - name: Require a service slug provided by the action definition
+      ansible.builtin.assert:
+        that:
+          - service is string
+          - service is match('^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$')
+        fail_msg: service must be an allow-listed slug configured by Capataz
+
+    - name: Report the controlled restart request
+      ansible.builtin.debug:
+        msg: "Controlled restart request accepted for {{ service }} on {{ inventory_hostname }}"

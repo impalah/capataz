@@ -1,0 +1,12 @@
+---
+all:
+  vars:
+    ansible_user: capataz_automation
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=yes"
+  children:
+    homelab:
+      hosts:
+        node-ai-01:
+          ansible_host: node-ai-01.home.arpa
+        node-gpu-01:
+          ansible_host: node-gpu-01.home.arpa

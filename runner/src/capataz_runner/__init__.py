@@ -1,0 +1,1 @@
+"""Capataz persistent automation runner."""

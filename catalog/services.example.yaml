@@ -1,0 +1,1598 @@
+version: 1
+services:
+  - id: open-webui
+    name: Open WebUI
+    description: Interfaz de modelos locales y externos y me voy a pasar de líneas a ver qué hace.
+    group_name: IA
+    environment: homelab
+    icon: auto_awesome
+    service_url: https://openwebui.home.arpa
+    documentation_url: https://docs.openwebui.com
+    portainer:
+      environment_id: 6
+      stack_name: homelab-retaco
+      aggregation: all_required
+      containers:
+        - name: open-webui
+          required: true
+    health:
+      type: http
+      url: https://openwebui.home.arpa/health
+      expected_status: 200
+      timeout_seconds: 5
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: open-webui
+    actions:
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: backup
+        label: Copia de seguridad
+        icon: backup
+        action_type: ansible
+        risk_level: critical
+        requires_confirmation: true
+        config:
+          playbook: playbooks/backup_service.yml
+          inventory: inventories/homelab.yml
+          limit: node-ai-01
+          extra_vars:
+            service: open-webui
+          timeout_seconds: 600
+
+  - id: ollama-service
+    name: Ollama
+    description: Servicio ollama
+    group_name: IA
+    environment: homelab
+    icon: memory
+    service_url: https://ollama.home.arpa
+    documentation_url: https://github.com/ollama/ollama
+    portainer:
+      environment_id: 5
+      stack_name: homelab-ryzen
+      aggregation: all_required
+      containers:
+        - name: ollama
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: ollama-service
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: postgres-main
+    name: PostgreSQL
+    description: PostgreSQL compartido y multi-tenant del clúster (n8n, SonarQube y más)
+    group_name: Datos
+    environment: homelab
+    icon: storage
+    portainer:
+      environment_id: 6
+      stack_name: homelab-retaco
+      aggregation: all_required
+      containers:
+        - name: postgres-main
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: postgres-main
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: valkey
+    name: Valkey
+    description: Caché clave-valor compartido del clúster (fork de Redis), sin persistencia; sin consumidores todavía
+    group_name: Datos
+    environment: homelab
+    icon: bolt
+    portainer:
+      environment_id: 6
+      stack_name: homelab-retaco
+      aggregation: all_required
+      containers:
+        - name: valkey
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: valkey
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: pihole
+    name: Pi-hole
+    description: Bloqueador de anuncios y servidor DNS autoritativo para home.arpa
+    group_name: Red
+    environment: homelab
+    icon: shield
+    service_url: https://pihole.home.arpa
+    documentation_url: https://docs.pi-hole.net/
+    portainer:
+      environment_id: 2
+      stack_name: homelab-pi-dns
+      aggregation: all_required
+      containers:
+        - name: pihole
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: pihole
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: n8n-main
+    name: n8n
+    description: Automatización de flujos de trabajo, instancia principal (co-localizada con postgres-main)
+    group_name: Automatización
+    environment: homelab
+    icon: account_tree
+    service_url: https://n8n.home.arpa
+    documentation_url: https://docs.n8n.io
+    portainer:
+      environment_id: 6
+      stack_name: homelab-retaco
+      aggregation: all_required
+      containers:
+        - name: n8n-main
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: n8n-main
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: vllm
+    name: vLLM
+    description: Servidor de inferencia de alto rendimiento (API compatible OpenAI) — alterna con Ollama, nunca a la vez
+    group_name: IA
+    environment: homelab
+    icon: speed
+    service_url: https://vllm.home.arpa
+    documentation_url: https://docs.vllm.ai/
+    portainer:
+      environment_id: 5
+      stack_name: homelab-ryzen
+      aggregation: all_required
+      containers:
+        - name: vllm
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: vllm
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: comfyui
+    name: ComfyUI
+    description: Generación de imágenes (Stable Diffusion y derivados) — alterna con whisper-service
+    group_name: IA
+    environment: homelab
+    icon: palette
+    service_url: https://comfyui.home.arpa
+    documentation_url: https://docs.comfy.org/
+    portainer:
+      environment_id: 5
+      stack_name: homelab-ryzen
+      aggregation: all_required
+      containers:
+        - name: comfyui
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: comfyui
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: qdrant
+    name: Qdrant
+    description: Motor de búsqueda vectorial
+    group_name: Datos
+    environment: homelab
+    icon: scatter_plot
+    service_url: https://qdrant.home.arpa
+    documentation_url: https://qdrant.tech/documentation/
+    portainer:
+      environment_id: 6
+      stack_name: homelab-retaco
+      aggregation: all_required
+      containers:
+        - name: qdrant
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: qdrant
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: whisper-service
+    name: Whisper
+    description: Transcripción de audio a texto (FastAPI + faster-whisper) — alterna con ComfyUI
+    group_name: IA
+    environment: homelab
+    icon: mic
+    service_url: https://whisper.home.arpa
+    portainer:
+      environment_id: 5
+      stack_name: homelab-ryzen
+      aggregation: all_required
+      containers:
+        - name: whisper-service
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: whisper-service
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: grafana
+    name: Grafana
+    description: Visualización, paneles y alertas sobre métricas, logs y trazas de todo el clúster
+    group_name: Observabilidad
+    environment: homelab
+    icon: insights
+    service_url: https://grafana.home.arpa
+    documentation_url: https://grafana.com/docs/
+    portainer:
+      environment_id: 3
+      stack_name: homelab-pi-obs
+      aggregation: all_required
+      containers:
+        - name: grafana
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: grafana
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: prometheus
+    name: Prometheus
+    description: Base de datos de series temporales para métricas de todo el clúster
+    group_name: Observabilidad
+    environment: homelab
+    icon: timeline
+    service_url: https://prometheus.home.arpa
+    documentation_url: https://prometheus.io/docs/
+    portainer:
+      environment_id: 3
+      stack_name: homelab-pi-obs
+      aggregation: all_required
+      containers:
+        - name: prometheus
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: prometheus
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: sonarqube
+    name: SonarQube
+    description: Análisis estático de calidad de código (Community Edition)
+    group_name: Desarrollo
+    environment: homelab
+    icon: bug_report
+    service_url: https://sonarqube.home.arpa
+    documentation_url: https://docs.sonarsource.com/sonarqube/
+    portainer:
+      environment_id: 4
+      stack_name: homelab-pi-sonar
+      aggregation: all_required
+      containers:
+        - name: sonarqube
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: sonarqube
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: bifrost
+    name: Bifrost
+    description: Gateway LLM único (API OpenAI-compatible) hacia AWS Bedrock y Ollama
+    group_name: IA
+    environment: homelab
+    icon: hub
+    service_url: https://bifrost.home.arpa
+    documentation_url: https://docs.getbifrost.ai/
+    portainer:
+      environment_id: 4
+      stack_name: homelab-pi-sonar
+      aggregation: all_required
+      containers:
+        - name: bifrost
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: bifrost
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: rsshub
+    name: RSSHub
+    description: Agregador RSS/Atom universal
+    group_name: Productividad
+    environment: homelab
+    icon: rss_feed
+    service_url: https://rsshub.home.arpa
+    portainer:
+      environment_id: 1
+      stack_name: homelab-pi-utils
+      aggregation: all_required
+      containers:
+        - name: rsshub
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: rsshub
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: markitdown-service
+    name: Markitdown
+    description: Conversión de documentos a Markdown (API REST)
+    group_name: Productividad
+    environment: homelab
+    icon: transform
+    service_url: https://markitdown.home.arpa
+    portainer:
+      environment_id: 1
+      stack_name: homelab-pi-utils
+      aggregation: all_required
+      containers:
+        - name: markitdown-service
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: markitdown-service
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: crawl4ai-scraper-service
+    name: Crawl4AI Scraper
+    description: Scraping y limpieza de contenido web a Markdown (Crawl4AI + Playwright)
+    group_name: Productividad
+    environment: homelab
+    icon: travel_explore
+    service_url: https://crawl4ai.scraper.home.arpa
+    portainer:
+      environment_id: 1
+      stack_name: homelab-pi-utils
+      aggregation: all_required
+      containers:
+        - name: crawl4ai-scraper-service
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: crawl4ai-scraper-service
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: n8n-aux
+    name: n8n (auxiliar)
+    description: Instancia secundaria de n8n para flujos de utilidades y notificaciones
+    group_name: Automatización
+    environment: homelab
+    icon: account_tree
+    service_url: https://n8n-aux.home.arpa
+    documentation_url: https://docs.n8n.io
+    portainer:
+      environment_id: 1
+      stack_name: homelab-pi-utils
+      aggregation: all_required
+      containers:
+        - name: n8n-aux
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: n8n-aux
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: portainer
+    name: Portainer
+    description: Panel web para gestionar Docker de todo el clúster sin terminal
+    group_name: Plataforma
+    environment: homelab
+    icon: widgets
+    service_url: https://portainer.home.arpa
+    documentation_url: https://docs.portainer.io/
+    portainer:
+      environment_id: 1
+      stack_name: homelab-pi-utils
+      aggregation: all_required
+      containers:
+        - name: portainer
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: portainer
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: vaultwarden
+    name: Vaultwarden
+    description: Gestor de contraseñas del clúster (compatible Bitwarden)
+    group_name: Seguridad
+    environment: homelab
+    icon: vpn_key
+    service_url: https://vaultwarden.home.arpa
+    documentation_url: https://github.com/dani-garcia/vaultwarden/wiki
+    portainer:
+      environment_id: 1
+      stack_name: homelab-pi-utils
+      aggregation: all_required
+      containers:
+        - name: vaultwarden
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: vaultwarden
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: apikey-service
+    name: API Key Service
+    description: Emisión y validación de claves de API propias; protege servicios sin autenticación nativa
+    group_name: Seguridad
+    environment: homelab
+    icon: security
+    service_url: https://apikey.home.arpa
+    portainer:
+      environment_id: 2
+      stack_name: homelab-pi-dns
+      aggregation: all_required
+      containers:
+        - name: apikey-service
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: apikey-service
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: registry
+    name: Registry
+    description: Registro Docker privado del clúster (imágenes propias)
+    group_name: Plataforma
+    environment: homelab
+    icon: archive
+    service_url: https://registry.home.arpa
+    portainer:
+      environment_id: 6
+      stack_name: homelab-retaco
+      aggregation: all_required
+      containers:
+        - name: registry
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: registry
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: epub2pdf-service
+    name: Epub2PDF
+    description: Convierte EPUB a PDF y extrae metadatos (Calibre + ebooklib)
+    group_name: Productividad
+    environment: homelab
+    icon: picture_as_pdf
+    service_url: https://epub2pdf.home.arpa
+    portainer:
+      environment_id: 6
+      stack_name: homelab-retaco
+      aggregation: all_required
+      containers:
+        - name: epub2pdf-service
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: epub2pdf-service
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: pdf2chunks-service
+    name: PDF2Chunks
+    description: Extrae texto de PDF (con OCR de respaldo) y lo trocea para RAG
+    group_name: Productividad
+    environment: homelab
+    icon: content_cut
+    service_url: https://pdf2chunks.home.arpa
+    portainer:
+      environment_id: 6
+      stack_name: homelab-retaco
+      aggregation: all_required
+      containers:
+        - name: pdf2chunks-service
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: pdf2chunks-service
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: open-terminal-mcp
+    name: Open Terminal (MCP)
+    description: Terminal, ficheros y ejecución de comandos expuestos vía MCP a Open WebUI y n8n
+    group_name: IA
+    environment: homelab
+    icon: terminal
+    service_url: https://open-terminal.home.arpa
+    documentation_url: https://github.com/open-webui/open-terminal
+    portainer:
+      environment_id: 6
+      stack_name: homelab-retaco
+      aggregation: all_required
+      containers:
+        - name: open-terminal-mcp
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: open-terminal-mcp
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: infisical
+    name: Infisical
+    description: Gestor de secretos para consumo entre máquinas (identidades por servicio)
+    group_name: Seguridad
+    environment: homelab
+    icon: enhanced_encryption
+    service_url: https://infisical.home.arpa
+    documentation_url: https://infisical.com/docs
+    portainer:
+      environment_id: 6
+      stack_name: homelab-retaco
+      aggregation: all_required
+      containers:
+        - name: infisical
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: infisical
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers
+
+  - id: authentik
+    name: Authentik
+    description: SSO/autenticación centralizada para personas (OIDC + forward-auth)
+    group_name: Seguridad
+    environment: homelab
+    icon: verified_user
+    service_url: https://authentik.home.arpa
+    documentation_url: https://docs.goauthentik.io/
+    portainer:
+      environment_id: 6
+      stack_name: homelab-retaco
+      aggregation: all_required
+      containers:
+        - name: authentik-server
+          required: true
+    grafana:
+      dashboard_uid: containers-overview
+      variables:
+        service: authentik
+    actions:
+      - key: start
+        label: Iniciar
+        icon: play_arrow
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: false
+        unattended: true
+        config:
+          operation: start
+          target: selected_containers
+      - key: stop
+        label: Detener
+        icon: stop
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: stop
+          target: selected_containers
+      - key: restart
+        label: Reiniciar
+        icon: restart_alt
+        action_type: portainer
+        risk_level: operate
+        requires_confirmation: true
+        unattended: true
+        config:
+          operation: restart
+          target: selected_containers
+      - key: logs
+        label: Consultar logs
+        icon: article
+        action_type: portainer
+        risk_level: read
+        requires_confirmation: false
+        config:
+          operation: logs
+          target: selected_containers

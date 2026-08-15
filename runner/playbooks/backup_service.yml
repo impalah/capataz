@@ -1,0 +1,19 @@
+---
+- name: Simulate a non-destructive service backup
+  hosts: all
+  gather_facts: false
+  vars:
+    service: ""
+    backup_label: "manual"
+  tasks:
+    - name: Validate allow-listed backup variables
+      ansible.builtin.assert:
+        that:
+          - service is string
+          - service is match('^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$')
+          - backup_label is string
+          - backup_label is match('^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$')
+
+    - name: Simulate backup only
+      ansible.builtin.debug:
+        msg: "SIMULATION ONLY: backup for {{ service }} labelled {{ backup_label }} would run on {{ inventory_hostname }}"

@@ -1,0 +1,5 @@
+---
+all:
+  hosts:
+    local-mock:
+      ansible_connection: local

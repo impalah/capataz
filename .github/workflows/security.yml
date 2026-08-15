@@ -1,0 +1,45 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    name: Gitleaks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  image-scan:
+    name: Trivy image scan
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [api, runner, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Construir imagen local
+        run: docker build --tag capataz-${{ matrix.component }}:scan ./${{ matrix.component }}
+      - name: Analizar vulnerabilidades sin publicar
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: capataz-${{ matrix.component }}:scan
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: HIGH,CRITICAL

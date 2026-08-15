@@ -1,0 +1,184 @@
+# Stack standalone del módulo runner: levanta ÚNICAMENTE `runner` junto con su propio PostgreSQL
+# y Redis dedicados (no compartidos con el api/docker-compose.yml ni con el stack raíz) — pensado
+# para desarrollar/probar el worker Celery de forma aislada sin construir api ni frontend. Al no
+# compartir Postgres/Redis con una `api` real, no habrá `Execution`s reales que consumir salvo que
+# los insertes/publiques tú mismo contra esta misma base; para el flujo end-to-end completo
+# (api encola -> runner ejecuta) usa el docker-compose.yml de la raíz del repo (`make up`).
+#
+# Requisitos previos (una sola vez, en la raíz del repo — ver README.md):
+#   cp .env.example .env && mkdir -p secrets && <generar secretos como indica el Quick start>
+#
+# Uso:
+#   docker compose --env-file ../.env -f docker-compose.yml up -d --build
+#   docker compose --env-file ../.env -f docker-compose.yml down
+name: capataz-runner
+
+x-api-env: &api-env
+  CAPATAZ_ENV: ${CAPATAZ_ENV:-production}
+  CAPATAZ_LOG_LEVEL: ${CAPATAZ_LOG_LEVEL:-INFO}
+  CAPATAZ_LOG_JSON: ${CAPATAZ_LOG_JSON:-true}
+  CAPATAZ_API_HOST: ${CAPATAZ_API_HOST:-0.0.0.0}
+  CAPATAZ_API_PORT: ${CAPATAZ_API_PORT:-8000}
+  CAPATAZ_CORS_ORIGINS: ${CAPATAZ_CORS_ORIGINS:-http://localhost:8080}
+  CAPATAZ_CELERY_QUEUE: ${CAPATAZ_CELERY_QUEUE:-automation}
+  CAPATAZ_CELERY_CONCURRENCY: ${CAPATAZ_CELERY_CONCURRENCY:-2}
+  CAPATAZ_PORTAINER_URL: ${CAPATAZ_PORTAINER_URL:-https://portainer.home.arpa}
+  CAPATAZ_GRAFANA_URL: ${CAPATAZ_GRAFANA_URL:-https://grafana.home.arpa}
+  CAPATAZ_LOKI_URL: ${CAPATAZ_LOKI_URL:-https://loki.home.arpa}
+  CAPATAZ_PROMETHEUS_URL: ${CAPATAZ_PROMETHEUS_URL:-https://prometheus.home.arpa}
+  CAPATAZ_COGNITO_REGION: ${CAPATAZ_COGNITO_REGION:-eu-west-1}
+  CAPATAZ_COGNITO_USER_POOL_ID: ${CAPATAZ_COGNITO_USER_POOL_ID:-}
+  CAPATAZ_COGNITO_APP_CLIENT_ID: ${CAPATAZ_COGNITO_APP_CLIENT_ID:-}
+  CAPATAZ_OIDC_ISSUER: ${CAPATAZ_OIDC_ISSUER:-}
+  CAPATAZ_OIDC_AUDIENCE: ${CAPATAZ_OIDC_AUDIENCE:-}
+  CAPATAZ_OIDC_JWKS_URI: ${CAPATAZ_OIDC_JWKS_URI:-}
+  CAPATAZ_OIDC_GROUPS_CLAIM: ${CAPATAZ_OIDC_GROUPS_CLAIM:-groups}
+  CAPATAZ_AUTH_MODE: ${CAPATAZ_AUTH_MODE:-cognito}
+  CAPATAZ_INITIAL_CATALOG_YAML_PATH: ${CAPATAZ_INITIAL_CATALOG_YAML_PATH:-/app/catalog/services.example.yaml}
+  CAPATAZ_HTTP_TIMEOUT_SECONDS: ${CAPATAZ_HTTP_TIMEOUT_SECONDS:-5}
+  CAPATAZ_HEALTH_ALLOWED_HOST_SUFFIXES: ${CAPATAZ_HEALTH_ALLOWED_HOST_SUFFIXES:-.home.arpa}
+  CAPATAZ_STATUS_CACHE_TTL_SECONDS: ${CAPATAZ_STATUS_CACHE_TTL_SECONDS:-30}
+  SSL_CERT_FILE: ${SSL_CERT_FILE:-}
+
+services:
+  runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: capataz-runner:local
+    environment: *api-env
+    networks:
+      - internal
+    volumes:
+      - ../certs:/run/ca-certs:ro
+    secrets:
+      - database_url
+      - redis_url
+      - portainer_token
+      - runner_ssh_private_key
+      - runner_known_hosts
+      - ansible_vault_password
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m
+      - /home/capataz/.ansible/tmp:rw,noexec,nosuid,size=128m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A capataz_runner.celery_app:app inspect ping --timeout=5 | grep -q pong"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1024M
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${CAPATAZ_POSTGRES_DB:-capataz}
+      POSTGRES_USER: ${CAPATAZ_POSTGRES_USER:-capataz}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    networks:
+      - internal
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    secrets:
+      - postgres_password
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETUID
+      - SETGID
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1024M
+
+  redis:
+    image: redis:7-alpine
+    command:
+      - /bin/sh
+      - -ec
+      - exec redis-server --appendonly yes --requirepass "$$(cat /run/secrets/redis_password)"
+    networks:
+      - internal
+    volumes:
+      - redis_data:/data
+    secrets:
+      - redis_password
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETUID
+      - SETGID
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/redis_password)\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+
+secrets:
+  postgres_password:
+    file: ../secrets/postgres_password
+  redis_password:
+    file: ../secrets/redis_password
+  database_url:
+    file: ../secrets/database_url
+  redis_url:
+    file: ../secrets/redis_url
+  portainer_token:
+    file: ../secrets/portainer_token
+  runner_ssh_private_key:
+    file: ../secrets/runner_ssh_private_key
+  runner_known_hosts:
+    file: ../secrets/runner_known_hosts
+  ansible_vault_password:
+    file: ../secrets/ansible_vault_password

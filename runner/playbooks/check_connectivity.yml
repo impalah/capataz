@@ -1,0 +1,7 @@
+---
+- name: Check Ansible connectivity without modifying hosts
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Ping managed node
+      ansible.builtin.ping:

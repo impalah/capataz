@@ -42,7 +42,9 @@ def test_cors_origins_without_wildcard_is_accepted() -> None:
 
 
 def test_validate_assignment_reruns_dev_mock_validator_after_construction() -> None:
-    settings = Settings(env="production")
+    # auth_mode must be passed explicitly (not left to the ambient CAPATAZ_AUTH_MODE env var,
+    # which CI sets to dev_mock for other tests) so construction itself doesn't fail here.
+    settings = Settings(auth_mode="cognito", env="production")
     with pytest.raises(ValidationError, match="permitted only when CAPATAZ_ENV=development"):
         settings.auth_mode = "dev_mock"
 

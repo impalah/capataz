@@ -93,7 +93,7 @@ clean: ## Elimina contenedores, redes, volúmenes y artefactos locales (con conf
 	@find . -type d \( -name __pycache__ -o -name .pytest_cache -o -name .mypy_cache -o -name .ruff_cache -o -name dist -o -name coverage \) -prune -exec rm -rf {} +
 
 security-scan: ## Ejecuta gitleaks/trivy mediante contenedores sin credenciales
-	docker run --rm -v "$(CURDIR):/repo:ro" zricethezav/gitleaks:v8.21.2 dir /repo --no-git
+	docker run --rm -v "$(CURDIR):/repo:ro" zricethezav/gitleaks:v8.21.2 git /repo
 	docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.57.1 image --severity HIGH,CRITICAL --ignore-unfixed capataz-api:local
 	docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.57.1 image --severity HIGH,CRITICAL --ignore-unfixed capataz-runner:local
 	docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.57.1 image --severity HIGH,CRITICAL --ignore-unfixed capataz-frontend:local

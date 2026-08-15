@@ -13,6 +13,15 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends openssh-client rsync git \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 --shell /usr/sbin/nologin capataz
+# Runtime only ever runs celery from the already-built /app/.venv — it never invokes pip. The
+# base image's own system Python still ships pip/setuptools/wheel (vendoring their own copies of
+# transitive libs like msgpack), which are unused here but do show up as fixable CVEs in image
+# scans; strip them instead of chasing a base-image tag bump for a package we never call.
+RUN find /usr/local/lib -maxdepth 3 -type d \
+      \( -name "pip" -o -name "pip-*" -o -name "setuptools" -o -name "setuptools-*" \
+         -o -name "pkg_resources" -o -name "wheel" -o -name "wheel-*" -o -name "_distutils_hack" \) \
+      -exec rm -rf {} + \
+    && rm -f /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.* /usr/local/lib/python3.14/site-packages/distutils-precedence.pth
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY --chown=capataz:capataz src /app/src

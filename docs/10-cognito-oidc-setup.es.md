@@ -137,10 +137,51 @@ docker compose up -d --force-recreate frontend
    ```
    Debe devolver `subject`/`email`/`groups`. Un 403 con `Invalid Cognito access token` en los logs de `api` casi siempre es `cognito:groups` ausente (RBAC vacío, no es lo mismo que un fallo de firma) o un desajuste de región/User Pool ID en el issuer.
 
+## 8. Personalizar el Managed Login al estilo de Capataz
+
+Solo aplica si el dominio Hosted UI usa **Managed Login v2** (el editor de estilos nuevo de Cognito), no el Hosted UI clásico:
+
+```bash
+aws cognito-idp describe-user-pool-domain --domain <prefijo-del-paso-4> --region <region> --query 'DomainDescription.ManagedLoginVersion'
+```
+
+Si devuelve `2`, sigue leyendo. Si devuelve `1` (o el campo no existe), es Hosted UI clásico — solo admite un logo (PNG, subido vía `SetUICustomization`, deprecada) y un bloque de CSS con clases fijas tipo `.background-customizable`/`.submitButton-customizable`; no hay editor visual ni el control fino de abajo.
+
+`docs/assets/cognito-managed-login-branding.py` en este repo aplica el tema de Capataz contra un `ManagedLoginBranding` existente por API — es el equivalente Cognito de `docs/assets/authentik-custom.css`, pero como Managed Login no acepta CSS libre (el estilo es un JSON estructurado por componente: `form`, `primaryButton`, `pageHeader`, `pageBackground`, etc., más assets de imagen en base64 por categoría), en vez de un fichero para pegar es un script que construye ese JSON a partir de los mismos tokens que `frontend/src/styles/app.scss` (bloque `:root` = tema oscuro, `body.body--light` = tema claro) y lo aplica con `update-managed-login-branding`:
+
+```bash
+# solo mostrar el payload (dry run)
+python3 docs/assets/cognito-managed-login-branding.py \
+  --user-pool-id <CAPATAZ_COGNITO_USER_POOL_ID> --client-id <CAPATAZ_COGNITO_APP_CLIENT_ID> --region <region>
+
+# aplicarlo de verdad
+python3 docs/assets/cognito-managed-login-branding.py \
+  --user-pool-id <CAPATAZ_COGNITO_USER_POOL_ID> --client-id <CAPATAZ_COGNITO_APP_CLIENT_ID> --region <region> --apply
+```
+
+Solo necesita el AWS CLI configurado con credenciales que puedan llamar a `cognito-idp:DescribeManagedLoginBrandingByClient`/`UpdateManagedLoginBranding` — sin `boto3`, sin dependencias del repo. Reutiliza `frontend/public/favicon.svg` como logo (form + header) y favicon — el script sanea una copia en memoria quitando `role`/`aria-label` del `<svg>` raíz antes de subirla, porque el saneador de SVG de Cognito los rechaza (`element [svg#role|aria-label] is not allowed`); el `favicon.svg` del repo no se toca. Mapea:
+
+- Fondo de página, tarjeta del formulario, header y footer → `--color-bg`/`--color-surface`/`--color-border` (oscuro y claro).
+- Botón primario → `--color-primary` por defecto, `--color-brand` (`#ff6600`) en hover/active — misma convención que `authentik-custom.css`.
+- `categories.global.colorSchemeMode` → `DYNAMIC`, así que Managed Login sigue el `prefers-color-scheme` del navegador en vez de fijar un único tema.
+- Radios: `12px` en la tarjeta (`--radius-lg`), `6px` en botones (`--radius-sm`).
+
+Advertencia si tocas el script o el JSON a mano: `categories.form.displayGraphics` controla el motivo decorativo de triángulos/degradado que trae Cognito por defecto — es independiente de `components.form.logo`, y si queda en `true` se pinta por encima de `components.pageBackground.color` aunque este esté bien configurado (así es como se detectó: el fondo plano de Capataz no aparecía hasta ponerlo en `false`). El script ya lo desactiva.
+
+Limitación conocida: `pageHeader`/`pageFooter` en Managed Login solo aceptan una imagen de logo, no hay un campo de texto para un título — así que "activar el header con Capataz" en la práctica es mostrar el icono de `favicon.svg` (el mismo hard-hat naranja del resto de la app), no un wordmark de texto. Si en algún momento quieres el nombre "Capataz" visible ahí, hace falta un SVG con el texto integrado y añadir su categoría (`PAGE_HEADER_LOGO`) al script — no implementado todavía.
+
+Verificación: abre la URL de login del Hosted UI directamente (no hace falta el frontend de Capataz):
+
+```
+https://<dominio-hosted-ui>/login?client_id=<CAPATAZ_COGNITO_APP_CLIENT_ID>&response_type=code&scope=openid+profile+email&redirect_uri=<un-redirect-uri-registrado>
+```
+
+**Los cambios de Managed Login se sirven detrás de CloudFront** — tras aplicar, si sigues viendo el estilo anterior (o el degradado decorativo por defecto) en el navegador, haz una recarga forzada (`Ctrl+Shift+R`) antes de asumir que no se aplicó; compáralo con lo que devuelve `aws cognito-idp describe-managed-login-branding` (o un `curl` directo a la URL de login, que sí refleja el estado servidor al vuelo) para descartar caché de navegador.
+
 ## Problemas frecuentes
 
-- **CORS al hacer `fetch` del discovery document o al intercambiar el código por el token**: con Authentik resolvimos esto añadiendo el origen exacto como Redirect URI. Cognito deriva sus cabeceras CORS del Hosted UI de forma distinta y hay reportes en la comunidad de que el endpoint `/oauth2/token` no siempre las envía para peticiones `fetch` directas desde el navegador — no lo he podido verificar en vivo (no hay un User Pool en este entorno). Si te pasa, la solución sin tocar Cognito es un proxy same-origin en el nginx del frontend (`frontend/nginx/default.conf`) que reenvíe `/oauth2/*` al dominio Hosted UI — dímelo si llegas a este punto y lo montamos juntos, es un cambio acotado.
-- **Logout no cierra sesión en Cognito, solo localmente**: el discovery document de Cognito normalmente **no** incluye `end_session_endpoint` (no es RP-initiated logout estándar) — mi `oidc.ts::logout()` ya contempla esto y hace logout solo local si no lo encuentra, sin romper nada, pero no verás cerrarse la sesión de Cognito/Hosted UI. Cognito expone su propio endpoint de logout (`https://<dominio-hosted-ui>/logout?client_id=...&logout_uri=...`), con nombres de parámetro distintos a los estándar OIDC — si quieres logout completo, es una pequeña rama Cognito-específica en `oidc.ts`, no implementada todavía.
+- **CORS al hacer `fetch` del discovery document o al intercambiar el código por el token**: verificado en vivo contra el user pool `Capataz` (`eu-west-1_T1JkF6VNE`) — no hace falta proxy ni workaround. El discovery document (`cognito-idp.<region>.amazonaws.com/<pool>/.well-known/openid-configuration`) responde `access-control-allow-origin: *`. El `token_endpoint` del dominio Hosted UI (`/oauth2/token`) sí implementa CORS correctamente: preflight `OPTIONS` y la respuesta real del `POST` devuelven `access-control-allow-origin` con el **Origin exacto de la petición** y `access-control-allow-credentials: true`. A diferencia de Authentik, esto **no está restringido a los Callback URLs registrados en el App Client** — Cognito refleja cualquier Origin que le mandes en la petición (lo comprobamos con un origen inventado y también lo aceptó), así que si ves un error de CORS aquí el problema no es de configuración de Cognito: revisa que el propio `fetch`/`XMLHttpRequest` del navegador esté bien formado (cabeceras, `Content-Type`, sin `credentials: 'include'` si no hace falta) antes de sospechar del lado del servidor.
+- **Logout devuelve "Invalid request. Please check your input and try again." y redirige a `/login` en vez de cerrar sesión**: encontrado y corregido en vivo (2026-08-19) probando contra el user pool `Capataz`. Con **Managed Login v2** el discovery document **sí** incluye `end_session_endpoint` (`https://<dominio-hosted-ui>/logout`) — al contrario de lo que decía esta nota antes — pero ese endpoint **no implementa RP-initiated logout estándar**: si le mandas `id_token_hint` (con o sin `post_logout_redirect_uri`/`client_id`), rechaza la petición y rebota a `/login` con "Invalid request", conservando esos mismos parámetros en la query string (confirmado con `curl` contra el endpoint real). Solo acepta su combinación propia `client_id` + `logout_uri` — sin `id_token_hint`. `oidc.ts::logout()` ya distingue esto: `isCognitoIssuer()` detecta el issuer `cognito-idp.<region>.amazonaws.com` y usa `logout_uri` en vez de `id_token_hint`/`post_logout_redirect_uri`; contra cualquier otro IdP (Authentik, Keycloak...) sigue usando el RP-initiated logout estándar. Si ves este error, confirma que el dominio exacto (`window.location.origin`, sin barra final) esté en **Sign-out URLs** del App Client — Cognito exige coincidencia exacta también ahí.
 - **RBAC vacío pese a que el usuario esté en un grupo**: revisa el paso 3 — es la causa más probable, no un problema de configuración de Capataz.
 
 ## Notas de seguridad

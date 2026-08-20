@@ -204,5 +204,39 @@ describe('oidc client (Authorization Code + PKCE)', () => {
     expect(oidc.hasSession()).toBe(false)
     const url = new URL(vi.mocked(window.location.assign).mock.calls.at(-1)?.[0] as string)
     expect(url.origin + url.pathname).toBe(DISCOVERY.end_session_endpoint)
+    expect(url.searchParams.get('post_logout_redirect_uri')).toBe(window.location.origin)
+    expect(url.searchParams.has('logout_uri')).toBe(false)
+  })
+
+  it("logout() against a Cognito issuer uses logout_uri instead of id_token_hint (Cognito's /logout doesn't support RP-initiated logout despite advertising end_session_endpoint)", async () => {
+    window.__APP_CONFIG__ = {
+      OIDC_ISSUER: 'https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_T1JkF6VNE',
+      OIDC_CLIENT_ID: 'cognito-test',
+    }
+    vi.resetModules()
+    oidc = await import('@/api/oidc')
+    const COGNITO_DISCOVERY = {
+      issuer: 'https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_T1JkF6VNE',
+      authorization_endpoint: 'https://capataz.auth.eu-west-1.amazoncognito.com/oauth2/authorize',
+      token_endpoint: 'https://capataz.auth.eu-west-1.amazoncognito.com/oauth2/token',
+      end_session_endpoint: 'https://capataz.auth.eu-west-1.amazoncognito.com/logout',
+    }
+
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(COGNITO_DISCOVERY))
+    await oidc.beginAuthorizationRedirect('/')
+    const pending = JSON.parse(sessionStorage.getItem('capataz.oidc.pending') as string)
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ access_token: 'access-1', expires_in: 300 }))
+    await oidc.handleRedirectCallback(
+      `https://capataz.home.arpa/auth/callback?code=abc&state=${pending.state}`,
+    )
+
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(COGNITO_DISCOVERY))
+    await oidc.logout()
+
+    const url = new URL(vi.mocked(window.location.assign).mock.calls.at(-1)?.[0] as string)
+    expect(url.origin + url.pathname).toBe(COGNITO_DISCOVERY.end_session_endpoint)
+    expect(url.searchParams.get('logout_uri')).toBe(window.location.origin)
+    expect(url.searchParams.has('id_token_hint')).toBe(false)
+    expect(url.searchParams.has('post_logout_redirect_uri')).toBe(false)
   })
 })

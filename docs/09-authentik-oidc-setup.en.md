@@ -129,6 +129,48 @@ With `CAPATAZ_FRONTEND_OIDC_ISSUER`/`CAPATAZ_FRONTEND_OIDC_CLIENT_ID` empty (the
 
 Resulting user flow: they go to `https://capataz.home.arpa/`, the route guard (`frontend/src/router/index.ts`) detects there's no session and navigates to `/login`, which immediately redirects to Authentik's `authorization_endpoint`; after authenticating it returns to `/auth/callback`, which exchanges the `code` for tokens (PKCE, no `client_secret`), calls `GET /api/v1/auth/me` to populate the session store, and navigates to the route the user originally requested. "Log out" in the account menu clears the local session and, if Authentik exposes an `end_session_endpoint`, also performs RP-initiated logout there.
 
+## 8. Brand the login/logout/password-change pages to match Capataz
+
+Authentik's flow executor (login, logout, password recovery, etc.) is themed from an
+**Authentik Brand**, not per-page HTML — there's no per-flow template override in the
+standard admin UI. Everything below is configured under **System → Brands → \<your
+brand\>** (create one if you don't have a non-default brand yet; it applies to the
+domain(s) you assign it to, e.g. `authentik.home.arpa`).
+
+- **Branding title / Logo / Favicon**: plain fields under **Branding**. Upload
+  `frontend/public/favicon.svg` directly (it's a standalone-colored SVG, not
+  `currentColor`-dependent, so it renders correctly as both logo and favicon without
+  extra tweaks) and set the title to `Capataz`.
+- **Custom CSS**: a free-text field under the same **Branding** section. Authentik injects
+  it into every flow-executor component's **shadow root**, and it cascades through
+  `:root, :host` — so overriding CSS custom properties (`--ak-*`, and the underlying
+  PatternFly `--pf-global--*` tokens) reskins colors, borders, radii, etc. across the
+  whole login/logout/recovery UI without needing to know PatternFly's internal markup.
+- **Default flow background**: also under **Branding**, applies to every flow using this
+  brand unless a flow overrides it individually (**Flows & Stages → Flows → \<flow\> →
+  Appearance settings → Background**, which also lets you pick a layout: `stacked`,
+  `content_left`, `content_right`, `sidebar_left`, `sidebar_right`).
+
+`docs/assets/authentik-custom.css` in this repo is a ready-to-paste Custom CSS built from
+Capataz's own theme tokens (`frontend/src/styles/quasar-variables.sass` and
+`frontend/src/styles/app.scss`'s dark-theme block — Capataz's default look): dark
+background (`#101618`), bordered flat panels instead of PatternFly's default shadow,
+teal accent (`#64aab0`) for primary actions, and the brand's hard-hat orange (`#ff6600`)
+reserved for hover/emphasis, matching `--color-brand` in the frontend. To apply it:
+
+1. **System → Brands → \<your brand\> → Branding → Custom CSS** → paste the full contents
+   of `docs/assets/authentik-custom.css` → Update.
+2. Upload `frontend/public/favicon.svg` as both **Logo** and **Favicon**.
+3. Reload `https://authentik.home.arpa/if/flow/default-authentication-flow/` (or your
+   configured authentication flow slug) and compare against Capataz's own `/login` page.
+
+The CSS only targets custom properties plus a couple of low-risk PatternFly class
+selectors (`.pf-c-login__main`, `.pf-c-card`, `.pf-c-button.pf-m-primary`) — the file
+itself documents which part to drop first if a future authentik/PatternFly upgrade stops
+matching those class names. There's no supported way to replace the flow executor's HTML
+structure itself (that would require patching authentik's own frontend build); the
+variable-driven approach above is the intended customization surface.
+
 ## Common issues
 
 - **CORS error in the console** (`No 'Access-Control-Allow-Origin' header is present`) while loading `.well-known/openid-configuration` or exchanging the code for the token: this almost always means the exact origin you're testing from (protocol+host+port, e.g. `http://localhost:8090`) doesn't have its own Redirect URI registered on the provider (step 3) — Authentik derives `Access-Control-Allow-Origin` from that list, and it isn't enough for the "real" production domain to be registered. Add `http://localhost:8090/auth/callback` (or whichever origin you're using) as an additional Redirect URI and retry.

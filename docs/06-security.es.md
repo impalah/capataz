@@ -40,6 +40,19 @@ Montar `/var/run/docker.sock` equivale normalmente a conceder control muy amplio
 
 La clave pertenece a una cuenta de automatización, sin login humano ni reutilización, con acceso por host limitado en `authorized_keys`. `known_hosts` se fija por huella; no desactives comprobación de clave. Da `sudo` por comando/tarea imprescindible, no `NOPASSWD: ALL`. Playbooks e inventarios son versionados y se montan/empaquetan como solo lectura. El Vault se usa para secretos de automatización, pero no sustituye Docker Secrets para credenciales del control plane.
 
+**Aprovisionamiento manual de la clave (fuera del alcance del repo):** Capataz nunca genera ni distribuye este par de claves — solo consume la mitad privada a través del Docker secret `runner_ssh_private_key` (`runner/src/capataz_runner/config.py`, `runner/src/capataz_runner/executor.py`). El aprovisionamiento y la rotación son un procedimiento manual del operador, ejecutado fuera del repo, cada vez que se añade un nodo nuevo al homelab o rota la clave:
+
+1. Genera un par de claves ed25519 en un puesto de administración de confianza — nunca en el host del runner ni en CI:
+   ```
+   ssh-keygen -t ed25519 -C "capataz-automation" -f ./runner_ssh_private_key -N ""
+   ```
+   Sin passphrase (`-N ""`): el runner lee la clave de forma desatendida desde un fichero Docker secret, así que el control de acceso del propio fichero (montaje de Docker secrets, `chmod 600`) es la capa de protección, no un prompt de passphrase.
+2. Coloca la mitad privada en `secrets/runner_ssh_private_key` (raíz del repo; ignorado por git vía `secrets/*`), `chmod 600`. Se convierte en el Docker secret `runner_ssh_private_key` que consume el servicio `runner`.
+3. Añade la mitad pública (`runner_ssh_private_key.pub`) a `~capataz_automation/.ssh/authorized_keys` en cada nodo listado en `runner/inventories/*.yml` (la cuenta es `ansible_user: capataz_automation`), idealmente restringida con un prefijo `from="<CIDR del homelab>"`, ya que esta cuenta solo debería ser alcanzable desde el host del runner.
+4. Fija las claves de host: desde el host del runner (o un punto de vista equivalente en la red del homelab), ejecuta `ssh-keyscan` contra cada host del inventario, verifica cada huella por un canal fuera de banda (consola, IPMI, u otro canal ya de confianza — no la misma ruta de red que intentas verificar), y escribe el resultado en `secrets/runner_known_hosts`.
+5. Borra de forma segura la copia local del material de clave privada en el puesto de administración una vez desplegada como Docker secret (p. ej. `shred -u`) — el puesto no debe conservar una copia permanente.
+6. Rota repitiendo los pasos 1-5 con un par de claves nuevo, desplegando el nuevo secret, verificando conectividad y solo entonces eliminando la clave pública antigua del `authorized_keys` de cada nodo.
+
 ## SSRF y health probes
 
 En import/CRUD se permiten solo `http` y `https`, se resuelve y valida el destino antes de conectar, se deniegan loopback, link-local, RFC1918/metadata cloud salvo allow-list explícita de homelab, se impiden redirects a destinos nuevos y se imponen timeouts cortos. El endpoint de refresh recibe un ID de servicio, nunca una URL. Las respuestas no deben reflejar cuerpos remotos sensibles.

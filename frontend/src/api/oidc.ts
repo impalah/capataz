@@ -291,6 +291,16 @@ async function refreshAccessToken(refreshToken: string): Promise<string | null> 
   }
 }
 
+/**
+ * Cognito's discovery document advertises a standards-shaped `end_session_endpoint`, but the
+ * endpoint itself doesn't implement RP-initiated logout — passing `id_token_hint` makes it
+ * bounce to `/login` with "Invalid request" instead of logging out. It only understands its own
+ * proprietary `client_id` + `logout_uri` pair (see docs/10-cognito-oidc-setup.md#common-issues).
+ */
+function isCognitoIssuer(issuer: string): boolean {
+  return /^https:\/\/cognito-idp\.[a-z0-9-]+\.amazonaws\.com\//.test(issuer)
+}
+
 /** Clears the local session and, when the IdP advertises one, redirects to its RP-initiated logout endpoint. */
 export async function logout(): Promise<void> {
   const session = readSession()
@@ -303,8 +313,12 @@ export async function logout(): Promise<void> {
     const discovery = await discover()
     if (discovery.end_session_endpoint) {
       const params = new URLSearchParams({ client_id: CLIENT_ID })
-      if (session?.idToken) params.set('id_token_hint', session.idToken)
-      params.set('post_logout_redirect_uri', window.location.origin)
+      if (isCognitoIssuer(discovery.issuer)) {
+        params.set('logout_uri', window.location.origin)
+      } else {
+        if (session?.idToken) params.set('id_token_hint', session.idToken)
+        params.set('post_logout_redirect_uri', window.location.origin)
+      }
       window.location.assign(`${discovery.end_session_endpoint}?${params.toString()}`)
       return
     }

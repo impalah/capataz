@@ -40,6 +40,19 @@ Mounting `/var/run/docker.sock` normally amounts to granting very broad control 
 
 The key belongs to an automation account, with no human login or reuse, with per-host access restricted in `authorized_keys`. `known_hosts` is pinned by fingerprint; don't disable key checking. Grant `sudo` per essential command/task, not `NOPASSWD: ALL`. Playbooks and inventories are versioned and mounted/packaged as read-only. Vault is used for automation secrets, but it does not replace Docker Secrets for control-plane credentials.
 
+**Manual key provisioning (out of repo scope):** Capataz never generates or distributes this key pair — it only consumes the private half from the `runner_ssh_private_key` Docker secret (`runner/src/capataz_runner/config.py`, `runner/src/capataz_runner/executor.py`). Provisioning and rotation are a manual operator procedure, run outside the repo, whenever a new homelab node is added or the key rotates:
+
+1. Generate an ed25519 key pair on a trusted admin workstation — never on the runner host or in CI:
+   ```
+   ssh-keygen -t ed25519 -C "capataz-automation" -f ./runner_ssh_private_key -N ""
+   ```
+   No passphrase (`-N ""`): the runner reads the key unattended from a Docker secret file, so the file's own access control (Docker secrets mount, `chmod 600`) is the protection layer, not a passphrase prompt.
+2. Place the private half at `secrets/runner_ssh_private_key` (repo root; gitignored via `secrets/*`), `chmod 600`. It becomes the `runner_ssh_private_key` Docker secret consumed by the `runner` service.
+3. Append the public half (`runner_ssh_private_key.pub`) to `~capataz_automation/.ssh/authorized_keys` on every node listed in `runner/inventories/*.yml` (the account is `ansible_user: capataz_automation`), ideally constrained with a `from="<homelab CIDR>"` prefix since this account should only ever be reached from the runner host.
+4. Pin host keys: from the runner host (or an equivalent vantage point on the homelab network), run `ssh-keyscan` against every inventory host, verify each fingerprint out-of-band (console, IPMI, or another already-trusted channel — not the same network path you're trying to verify), and write the result to `secrets/runner_known_hosts`.
+5. Securely wipe the local copy of the private key material from the admin workstation once it's deployed as a Docker secret (e.g. `shred -u`) — the workstation should not retain a standing copy.
+6. Rotate by repeating steps 1-5 with a new key pair, deploying the new secret, verifying connectivity, and only then removing the old public key from every node's `authorized_keys`.
+
 ## SSRF and Health Probes
 
 On import/CRUD only `http` and `https` are allowed, the destination is resolved and validated before connecting, loopback, link-local, RFC1918/cloud metadata are denied except via an explicit homelab allow-list, redirects to new destinations are prevented, and short timeouts are enforced. The refresh endpoint receives a service ID, never a URL. Responses must not reflect sensitive remote bodies.

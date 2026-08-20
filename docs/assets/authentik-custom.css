@@ -1,0 +1,64 @@
+/*
+ * Authentik Brand "Custom CSS" for Capataz.
+ *
+ * Paste this whole file into System -> Brands -> <brand> -> Branding -> Custom CSS.
+ * It only overrides CSS custom properties, so it survives authentik upgrades better
+ * than selector-based overrides (authentik ships this into every component's shadow
+ * root, cascading through `:root, :host` — see docs/09-authentik-oidc-setup.en.md).
+ *
+ * Palette source of truth: frontend/src/styles/quasar-variables.sass and
+ * frontend/src/styles/app.scss (dark theme block, Capataz's default theme).
+ */
+
+:root,
+:host {
+  /* authentik-native variables */
+  --ak-accent: #64aab0; /* --color-primary (dark) */
+  --ak-dark-background: #101618; /* --color-bg (dark) */
+  --ak-dark-background-light: #182023; /* --color-surface (dark) */
+  --ak-dark-background-darker: #0b0f11;
+  --ak-dark-foreground: #e7eceb; /* --color-text (dark) */
+  --ak-dark-foreground-link: #a8dce0; /* --color-accent-text (dark) */
+
+  /* PatternFly tokens authentik's flow executor and admin shell read from */
+  --pf-global--primary-color--100: #64aab0;
+  --pf-global--primary-color--200: #2f7d84;
+  --pf-global--primary-color--400: #ff6600; /* --color-brand: Capataz's hard-hat orange, CTA emphasis only */
+  --pf-global--Color--100: #e7eceb;
+  --pf-global--Color--200: #aab7b8; /* --color-text-muted (dark) */
+  --pf-global--BackgroundColor--100: #182023;
+  --pf-global--BackgroundColor--dark-100: #182023;
+  --pf-global--BackgroundColor--dark-300: #101618;
+  --pf-global--BorderColor--100: #344245; /* --color-border (dark) */
+  --pf-global--link--Color: #a8dce0;
+  --pf-global--link--Color--hover: #ff6600;
+  --pf-global--link--Color--visited: #a8dce0;
+  --pf-global--BorderRadius--lg: 12px; /* --radius-lg: 0.75rem */
+  --pf-global--BorderRadius--sm: 6px; /* --radius-sm: 0.375rem */
+  --pf-global--FontFamily--sans-serif: 'Segoe UI', sans-serif; /* matches Capataz's rendered fallback: Satoshi/General Sans aren't self-hosted in frontend/, so the browser already falls back to this */
+}
+
+/* Card/panel chrome: match Capataz's flat bordered panels instead of PatternFly's default shadow. */
+.pf-c-login__main,
+.pf-c-card {
+  border: 1px solid var(--pf-global--BorderColor--100);
+  border-radius: var(--pf-global--BorderRadius--lg);
+  box-shadow: none;
+}
+
+.pf-c-button.pf-m-primary {
+  background-color: var(--ak-accent);
+  border-radius: var(--pf-global--BorderRadius--sm);
+}
+
+.pf-c-button.pf-m-primary:hover,
+.pf-c-button.pf-m-primary:focus {
+  background-color: var(--pf-global--primary-color--400);
+}
+
+/*
+ * Selector-based rules (.pf-c-login__main, .pf-c-card, .pf-c-button.pf-m-primary) target
+ * PatternFly class names and are more likely to drift across authentik/PatternFly upgrades
+ * than the variables above — if a release visibly stops applying them, drop the block and
+ * keep only the :root/:host variables.
+ */

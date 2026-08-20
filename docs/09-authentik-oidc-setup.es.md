@@ -129,6 +129,53 @@ Con `CAPATAZ_FRONTEND_OIDC_ISSUER`/`CAPATAZ_FRONTEND_OIDC_CLIENT_ID` vacíos (el
 
 Flujo resultante para el usuario: entra a `https://capataz.home.arpa/`, el guard de rutas (`frontend/src/router/index.ts`) detecta que no hay sesión y navega a `/login`, que redirige de inmediato al `authorization_endpoint` de Authentik; tras autenticarse vuelve a `/auth/callback`, que intercambia el `code` por tokens (PKCE, sin `client_secret`), llama a `GET /api/v1/auth/me` para poblar el store de sesión y navega a la ruta que el usuario pedía originalmente. "Cerrar sesión" en el menú de cuenta limpia la sesión local y, si Authentik expone `end_session_endpoint`, hace logout RP-initiated también allí.
 
+## 8. Personalizar las páginas de login/logout/cambio de contraseña al estilo de Capataz
+
+El ejecutor de flujos de Authentik (login, logout, recuperación de contraseña, etc.) se
+personaliza desde una **Brand de Authentik**, no con HTML por página — no hay override de
+plantilla por flujo en la UI de administración estándar. Todo lo de abajo se configura en
+**System → Brands → \<tu brand\>** (crea una brand no-default si aún no tienes una; se
+aplica al dominio o dominios que le asignes, p. ej. `authentik.home.arpa`).
+
+- **Branding title / Logo / Favicon**: campos simples bajo **Branding**. Sube
+  `frontend/public/favicon.svg` tal cual (es un SVG con color propio, no depende de
+  `currentColor`, así que se ve correctamente tanto de logo como de favicon sin retoques)
+  y pon el título a `Capataz`.
+- **Custom CSS**: campo de texto libre en la misma sección **Branding**. Authentik lo
+  inyecta en el **shadow root** de cada componente del ejecutor de flujos, y cascada a
+  través de `:root, :host` — así que sobrescribir custom properties CSS (`--ak-*`, y los
+  tokens PatternFly `--pf-global--*` subyacentes) cambia colores, bordes, radios, etc. en
+  todo el login/logout/recuperación sin necesidad de conocer el marcado interno de
+  PatternFly.
+- **Default flow background**: también en **Branding**, se aplica a todos los flujos que
+  usen esta brand salvo que un flujo concreto lo sobrescriba (**Flows & Stages → Flows →
+  \<flujo\> → Appearance settings → Background**, que también permite elegir layout:
+  `stacked`, `content_left`, `content_right`, `sidebar_left`, `sidebar_right`).
+
+`docs/assets/authentik-custom.css` en este repo es un Custom CSS listo para pegar,
+construido a partir de los propios tokens de tema de Capataz
+(`frontend/src/styles/quasar-variables.sass` y el bloque de tema oscuro de
+`frontend/src/styles/app.scss` — el aspecto por defecto de Capataz): fondo oscuro
+(`#101618`), paneles planos con borde en vez de la sombra por defecto de PatternFly,
+acento teal (`#64aab0`) para acciones primarias, y el naranja "hard-hat" de marca
+(`#ff6600`) reservado para hover/énfasis, igual que `--color-brand` en el frontend. Para
+aplicarlo:
+
+1. **System → Brands → \<tu brand\> → Branding → Custom CSS** → pega el contenido
+   completo de `docs/assets/authentik-custom.css` → Update.
+2. Sube `frontend/public/favicon.svg` como **Logo** y como **Favicon**.
+3. Recarga `https://authentik.home.arpa/if/flow/default-authentication-flow/` (o el slug
+   de tu flujo de autenticación configurado) y compáralo con el propio `/login` de
+   Capataz.
+
+El CSS solo apunta a custom properties más un par de selectores de clase PatternFly de
+bajo riesgo (`.pf-c-login__main`, `.pf-c-card`, `.pf-c-button.pf-m-primary`) — el propio
+archivo documenta qué parte quitar primero si una futura versión de authentik/PatternFly
+deja de matchear esas clases. No existe una forma soportada de reemplazar la propia
+estructura HTML del ejecutor de flujos (requeriría parchear el build del frontend de
+authentik); el enfoque basado en variables de arriba es la superficie de personalización
+prevista.
+
 ## Problemas frecuentes
 
 - **Error de CORS en consola** (`No 'Access-Control-Allow-Origin' header is present`) al cargar `.well-known/openid-configuration` o al intercambiar el código por el token: casi siempre significa que el origen exacto desde el que estás probando (protocolo+host+puerto, p. ej. `http://localhost:8090`) no tiene su propio Redirect URI dado de alta en el provider (paso 3) — Authentik deriva el `Access-Control-Allow-Origin` de esa lista, no basta con que el dominio "real" de producción esté registrado. Añade `http://localhost:8090/auth/callback` (o el origen que uses) como Redirect URI adicional y reintenta.

@@ -25,8 +25,9 @@ REGISTRY_USER     ?=
 REGISTRY_PASSWORD ?=
 REGISTRY_IMAGE    := $(REGISTRY_URI)/$(SERVICE_NAME)
 
-# capataz-runner solo corre hoy en nodos amd64; sobreescribe desde .env si hiciera falta arm64.
-PLATFORMS ?= linux/amd64
+# capataz-runner corre en pi-utils (Raspberry Pi 5, arm64) además de nodos
+# amd64 — multi-arch por defecto, sobreescribible desde .env.
+PLATFORMS ?= linux/amd64,linux/arm64
 
 ## Levanta SOLO runner + su propio Postgres/Redis dedicados (docker-compose.yml de este directorio)
 up:

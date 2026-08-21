@@ -323,6 +323,7 @@ const itIT: MessageSchema = {
     },
     serviceCard: {
       viewServiceAria: 'Vedi {name}',
+      openServiceAria: 'Apri {name}',
       updateStatus: 'Aggiorna stato',
       noDescription: 'Nessuna descrizione disponibile.',
       stackLabel: 'Stack: {stack}',

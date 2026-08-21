@@ -322,6 +322,7 @@ const frFR: MessageSchema = {
     },
     serviceCard: {
       viewServiceAria: 'Voir {name}',
+      openServiceAria: 'Ouvrir {name}',
       updateStatus: 'Actualiser l’état',
       noDescription: 'Aucune description disponible.',
       stackLabel: 'Stack : {stack}',

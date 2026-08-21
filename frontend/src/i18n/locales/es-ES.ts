@@ -321,6 +321,7 @@ const es = {
     },
     serviceCard: {
       viewServiceAria: 'Ver {name}',
+      openServiceAria: 'Abrir {name}',
       updateStatus: 'Actualizar estado',
       noDescription: 'Sin descripción disponible.',
       stackLabel: 'Stack: {stack}',

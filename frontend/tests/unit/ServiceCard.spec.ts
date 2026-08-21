@@ -112,6 +112,32 @@ describe('ServiceCard', () => {
     expect(wrapper.findAll('button').filter((b) => b.text() === 'Ver servicio')).toHaveLength(0)
   })
 
+  it('renders the default icon and does not make it clickable when the service has no service_url', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+    const { wrapper } = await mountCard({ service, status, canRefresh: true })
+
+    expect(wrapper.get('.card-icon i.q-icon').text()).toBe('dns')
+    const icon = wrapper.find('.card-icon')
+    expect(icon.attributes('role')).toBeUndefined()
+    expect(icon.attributes('tabindex')).toBeUndefined()
+    await icon.trigger('click')
+    expect(openSpy).not.toHaveBeenCalled()
+    openSpy.mockRestore()
+  })
+
+  it('makes the icon clickable and opens service_url in a new tab when set', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+    const serviceWithUrl = { ...service, service_url: 'https://open-webui.home.arpa' }
+    const { wrapper } = await mountCard({ service: serviceWithUrl, status, canRefresh: true })
+
+    const icon = wrapper.get('.card-icon')
+    expect(icon.attributes('role')).toBe('button')
+    expect(icon.attributes('aria-label')).toBe('Abrir Open WebUI')
+    await icon.trigger('click')
+    expect(openSpy).toHaveBeenCalledWith('https://open-webui.home.arpa', '_blank', 'noopener,noreferrer')
+    openSpy.mockRestore()
+  })
+
   it('falls back gracefully when status has not loaded yet', async () => {
     const { wrapper } = await mountCard({ service, canRefresh: false })
     expect(wrapper.text()).toContain('Desconocido')

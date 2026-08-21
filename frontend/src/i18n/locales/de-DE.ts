@@ -325,6 +325,7 @@ const deDE: MessageSchema = {
     },
     serviceCard: {
       viewServiceAria: '{name} ansehen',
+      openServiceAria: '{name} öffnen',
       updateStatus: 'Status aktualisieren',
       noDescription: 'Keine Beschreibung verfügbar.',
       stackLabel: 'Stack: {stack}',

@@ -213,6 +213,12 @@ textarea {
   align-items: flex-start;
   color: var(--color-accent-text);
 }
+.card-icon {
+  display: inline-flex;
+}
+.card-icon--clickable {
+  cursor: pointer;
+}
 .card-status {
   display: flex;
   flex-direction: column;

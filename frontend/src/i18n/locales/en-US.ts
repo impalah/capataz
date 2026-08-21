@@ -322,6 +322,7 @@ const enUS: MessageSchema = {
     },
     serviceCard: {
       viewServiceAria: 'View {name}',
+      openServiceAria: 'Open {name}',
       updateStatus: 'Refresh status',
       noDescription: 'No description available.',
       stackLabel: 'Stack: {stack}',

@@ -322,6 +322,7 @@ const ptPT: MessageSchema = {
     },
     serviceCard: {
       viewServiceAria: 'Ver {name}',
+      openServiceAria: 'Abrir {name}',
       updateStatus: 'Atualizar estado',
       noDescription: 'Sem descrição disponível.',
       stackLabel: 'Stack: {stack}',

@@ -35,6 +35,10 @@ const { pending, confirmOpen, requestAction, confirmPending } = useActionExecuti
     services.refresh(props.service.id).catch(() => undefined)
   },
 )
+const openServiceUrl = (): void => {
+  if (!props.service.service_url) return
+  window.open(props.service.service_url, '_blank', 'noopener,noreferrer')
+}
 </script>
 <template>
   <article class="service-card">
@@ -44,7 +48,22 @@ const { pending, confirmOpen, requestAction, confirmPending } = useActionExecuti
       :aria-label="t('components.serviceCard.viewServiceAria', { name: service.name })"
     />
     <div class="card-top">
-      <q-icon :name="service.icon ?? 'dns'" size="28px" />
+      <span
+        class="card-icon"
+        :class="{ 'card-icon--clickable': service.service_url }"
+        :role="service.service_url ? 'button' : undefined"
+        :tabindex="service.service_url ? 0 : undefined"
+        :aria-label="
+          service.service_url
+            ? t('components.serviceCard.openServiceAria', { name: service.name })
+            : undefined
+        "
+        @click.stop="openServiceUrl"
+        @keydown.enter.space.stop.prevent="openServiceUrl"
+        ><q-icon :name="service.icon ?? 'dns'" size="28px" /><q-tooltip v-if="service.service_url">{{
+          t('pages.serviceDetail.openService')
+        }}</q-tooltip></span
+      >
       <div class="card-status">
         <span
           class="card-status-trigger"
@@ -75,7 +94,9 @@ const { pending, confirmOpen, requestAction, confirmPending } = useActionExecuti
       <q-chip dense>{{ service.group_name }}</q-chip
       ><q-chip dense outline>{{ service.environment }}</q-chip>
     </div>
-    <p class="card-stack">{{ t('components.serviceCard.stackLabel', { stack: service.portainer_stack_name ?? '—' }) }}</p>
+    <p class="card-stack">
+      {{ t('components.serviceCard.stackLabel', { stack: service.portainer_stack_name ?? '—' }) }}
+    </p>
     <div v-if="actions?.length" class="card-actions">
       <q-btn
         v-for="action in actions"

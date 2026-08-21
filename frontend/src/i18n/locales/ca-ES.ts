@@ -322,6 +322,7 @@ const caES: MessageSchema = {
     },
     serviceCard: {
       viewServiceAria: 'Veure {name}',
+      openServiceAria: 'Obre {name}',
       updateStatus: 'Actualitza l’estat',
       noDescription: 'No hi ha descripció disponible.',
       stackLabel: 'Stack: {stack}',

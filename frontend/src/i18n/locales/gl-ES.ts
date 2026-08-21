@@ -323,6 +323,7 @@ const glES: MessageSchema = {
     },
     serviceCard: {
       viewServiceAria: 'Ver {name}',
+      openServiceAria: 'Abrir {name}',
       updateStatus: 'Actualizar estado',
       noDescription: 'Sen descrición dispoñible.',
       stackLabel: 'Stack: {stack}',

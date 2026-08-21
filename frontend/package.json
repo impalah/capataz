@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@quasar/extras": "^1.16.13",
-    "@quasar/vite-plugin": "^1.10.0",
+    "@quasar/vite-plugin": "^2.0.0",
     "@vueuse/core": "^14.4.0",
     "pinia": "^3.0.2",
     "quasar": "^2.18.1",

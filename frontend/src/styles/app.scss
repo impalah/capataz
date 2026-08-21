@@ -375,6 +375,13 @@ body.body--light .error-banner {
 .form-card {
   width: min(100%, 540px);
 }
+.form-card-wide {
+  width: min(100%, 680px);
+}
+.scroll-section {
+  max-height: 60vh;
+  overflow-y: auto;
+}
 .table-filter {
   min-width: 260px;
 }

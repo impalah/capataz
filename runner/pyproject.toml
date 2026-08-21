@@ -1,6 +1,6 @@
 [project]
 name = "capataz-runner"
-version = "0.1.0"
+version = "0.1.1"
 description = "Secure persistent Celery automation runner for Capataz"
 readme = "README.md"
 requires-python = ">=3.14"

@@ -15,7 +15,7 @@ from capataz_api.infrastructure.observability import CorrelationIdMiddleware
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(
-        title="Capataz API", version="0.1.0", openapi_url="/api/v1/openapi.json", lifespan=lifespan
+        title="Capataz API", version="0.1.1", openapi_url="/api/v1/openapi.json", lifespan=lifespan
     )
     app.add_middleware(CorrelationIdMiddleware)
     # Must be added before CORSMiddleware below: add_middleware wraps in reverse order, so the

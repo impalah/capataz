@@ -24,6 +24,28 @@ export interface ServiceStatusResult {
   external_healthy?: boolean | null
   error?: string
 }
+export interface ContainerSelector {
+  name: string
+  required?: boolean
+  critical?: boolean
+}
+export interface ContainerSelectors {
+  aggregation?: 'all_required' | 'any_healthy'
+  containers?: ContainerSelector[]
+}
+export interface HealthConfig {
+  type?: 'http' | 'tcp'
+  url?: string
+  expected_status?: number
+  timeout_seconds?: number
+}
+export interface GrafanaConfig {
+  dashboard_uid?: string
+  variables?: Record<string, string>
+}
+export interface LokiConfig {
+  query?: string
+}
 export interface Service {
   id: string
   name: string
@@ -35,7 +57,12 @@ export interface Service {
   documentation_url?: string
   portainer_environment_id?: string
   portainer_stack_name?: string
+  container_selectors?: ContainerSelectors
+  health_config?: HealthConfig
+  grafana_config?: GrafanaConfig
+  loki_config?: LokiConfig
   metadata?: Record<string, string>
+  maintenance?: boolean
   version?: number
 }
 export interface ActionDefinition {

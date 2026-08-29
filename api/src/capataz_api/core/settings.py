@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     auth_mode: str = "cognito"
     initial_catalog_yaml_path: str | None = None
     http_timeout_seconds: float = Field(default=5, gt=0, le=60)
-    health_allowed_host_suffixes: str = ".home.arpa"
+    health_allowed_host_suffixes: str = ".404labo.net"
     status_cache_ttl_seconds: int = Field(default=30, gt=0)
 
     @field_validator("auth_mode")

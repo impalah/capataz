@@ -25,8 +25,7 @@ REGISTRY_USER     ?=
 REGISTRY_PASSWORD ?=
 REGISTRY_IMAGE    := $(REGISTRY_URI)/$(SERVICE_NAME)
 
-# capataz-frontend solo corre hoy en nodos amd64; sobreescribe desde .env si hiciera falta arm64.
-PLATFORMS ?= linux/amd64
+PLATFORMS ?= linux/amd64,linux/arm64
 
 # Config en tiempo de ejecución del contenedor (ver frontend/nginx/40-render-runtime-config.sh y
 # docs/adr/007-runtime-frontend-config.es.md) — ya no son build args de Vite: la imagen se construye

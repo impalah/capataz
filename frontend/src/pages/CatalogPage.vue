@@ -42,8 +42,16 @@ const ansiblePlaybooks = [
 const ansibleInventories = ['inventories/homelab.yml', 'inventories/local.yml']
 const healthTypes = ['http', 'tcp']
 const aggregations = ['all_required', 'any_healthy']
+const selectorKinds = ['containers', 'services'] as const
+const portainerTargets = ['selected_containers', 'selected_services'] as const
 interface ContainerRow {
   name: string
+  required: boolean
+  critical: boolean
+}
+interface ServiceRow {
+  name: string
+  replicas: number
   required: boolean
   critical: boolean
 }
@@ -65,7 +73,9 @@ const emptyServiceForm = (): Partial<Service> => ({
   portainer_stack_name: '',
 })
 const form = ref<Partial<Service>>(emptyServiceForm())
+const selectorKind = ref<'containers' | 'services'>('containers')
 const containerRows = ref<ContainerRow[]>([])
+const serviceRows = ref<ServiceRow[]>([])
 const containerAggregation = ref<'all_required' | 'any_healthy'>('all_required')
 const healthType = ref<'http' | 'tcp'>('http')
 const healthUrl = ref('')
@@ -78,11 +88,19 @@ const lokiQuery = ref('')
 // (alta nueva) — container_selectors/health_config/grafana_config/loki_config son objetos
 // anidados que no se pueden bindear directamente a inputs planos como el resto de `form`.
 const resetServiceFormExtras = (service?: Service) => {
+  const declaredServices = service?.container_selectors?.services ?? []
+  selectorKind.value = declaredServices.length ? 'services' : 'containers'
   const containers = service?.container_selectors?.containers ?? []
   containerRows.value = containers.map((container) => ({
     name: container.name,
     required: container.required ?? true,
     critical: container.critical ?? false,
+  }))
+  serviceRows.value = declaredServices.map((item) => ({
+    name: item.name,
+    replicas: item.replicas ?? 1,
+    required: item.required ?? true,
+    critical: item.critical ?? false,
   }))
   containerAggregation.value = service?.container_selectors?.aggregation ?? 'all_required'
   healthType.value = service?.health_config?.type ?? 'http'
@@ -96,6 +114,9 @@ const resetServiceFormExtras = (service?: Service) => {
 }
 const addContainerRow = () => containerRows.value.push({ name: '', required: true, critical: false })
 const removeContainerRow = (index: number) => containerRows.value.splice(index, 1)
+const addServiceRow = () =>
+  serviceRows.value.push({ name: '', replicas: 1, required: true, critical: false })
+const removeServiceRow = (index: number) => serviceRows.value.splice(index, 1)
 const addVariableRow = () => grafanaVariableRows.value.push({ key: '', value: '' })
 const removeVariableRow = (index: number) => grafanaVariableRows.value.splice(index, 1)
 const defaultActionConfig = (type: ActionType): Record<string, unknown> =>
@@ -127,6 +148,15 @@ const portainerOperation = computed({
   },
   set: (value: string) => {
     actionForm.value.config = { ...actionForm.value.config, operation: value }
+  },
+})
+const portainerTarget = computed({
+  get: () => {
+    const value = actionForm.value.config?.target
+    return typeof value === 'string' ? value : 'selected_containers'
+  },
+  set: (value: string) => {
+    actionForm.value.config = { ...actionForm.value.config, target: value }
   },
 })
 const ansibleField = (key: 'playbook' | 'inventory' | 'limit') =>
@@ -173,7 +203,7 @@ const serviceToDelete = ref<Service>()
 const confirmActionDialog = ref(false)
 const actionToDelete = ref<ActionDefinition>()
 onMounted(() => {
-  services.fetch().catch(() => undefined)
+  services.fetch({ limit: '100' }).catch(() => undefined)
 })
 const dryRun = async () => {
   try {
@@ -190,7 +220,7 @@ const applyImport = async () => {
       type: result.valid ? 'positive' : 'negative',
       message: result.valid ? t('notify.catalogImported') : t('notify.catalogHasErrors'),
     })
-    if (result.valid) await services.fetch()
+    if (result.valid) await services.fetch({ limit: '100' })
   } catch (error) {
     notifyApiError(error, t('notify.catalogImportRejected'))
   }
@@ -233,7 +263,16 @@ const saveService = async () => {
     version,
   } = form.value
   const validContainers = containerRows.value.filter((row) => row.name.trim())
+  const validServices = serviceRows.value.filter((row) => row.name.trim())
   const validVariables = grafanaVariableRows.value.filter((row) => row.key.trim())
+  const containerSelectors =
+    selectorKind.value === 'services'
+      ? validServices.length
+        ? { aggregation: containerAggregation.value, services: validServices }
+        : {}
+      : validContainers.length
+        ? { aggregation: containerAggregation.value, containers: validContainers }
+        : {}
   const payload = {
     name,
     group_name,
@@ -245,9 +284,7 @@ const saveService = async () => {
     maintenance,
     portainer_environment_id,
     portainer_stack_name,
-    container_selectors: validContainers.length
-      ? { aggregation: containerAggregation.value, containers: validContainers }
-      : {},
+    container_selectors: containerSelectors,
     health_config: healthUrl.value.trim()
       ? {
           type: healthType.value,
@@ -273,7 +310,7 @@ const saveService = async () => {
       await api.createService({ id: form.value.id, ...payload })
     }
     serviceDialog.value = false
-    await services.fetch()
+    await services.fetch({ limit: '100' })
     Notify.create({
       type: 'positive',
       message: editing.value ? t('notify.serviceUpdated') : t('notify.serviceCreated'),
@@ -298,7 +335,7 @@ const removeService = async () => {
   if (!service) return
   try {
     await api.deleteService(service.id)
-    await services.fetch()
+    await services.fetch({ limit: '100' })
     Notify.create({ type: 'positive', message: t('notify.serviceDeleted') })
   } catch (error) {
     notifyApiError(error, t('notify.serviceDeleteFailed'))
@@ -620,40 +657,93 @@ const removeAction = async () => {
                 outlined
                 :label="t('pages.catalog.portainerAggregationLabel')"
               />
-              <div class="text-caption">{{ t('pages.catalog.containersTitle') }}</div>
-              <div
-                v-for="(row, index) in containerRows"
-                :key="index"
-                class="row q-col-gutter-sm items-center"
-              >
-                <q-input
-                  v-model="row.name"
-                  outlined
-                  dense
-                  class="col"
-                  :label="t('pages.catalog.containerNameLabel')"
-                />
-                <q-toggle v-model="row.required" dense :label="t('pages.catalog.containerRequiredLabel')" />
-                <q-toggle v-model="row.critical" dense :label="t('pages.catalog.containerCriticalLabel')" />
+              <q-select
+                v-model="selectorKind"
+                :options="selectorKinds"
+                :option-label="(value) => t(`enums.selectorKind.${value}`)"
+                outlined
+                :label="t('pages.catalog.selectorKindLabel')"
+              />
+              <template v-if="selectorKind === 'containers'">
+                <div class="text-caption">{{ t('pages.catalog.containersTitle') }}</div>
+                <div
+                  v-for="(row, index) in containerRows"
+                  :key="index"
+                  class="row q-col-gutter-sm items-center"
+                >
+                  <q-input
+                    v-model="row.name"
+                    outlined
+                    dense
+                    class="col"
+                    :label="t('pages.catalog.containerNameLabel')"
+                  />
+                  <q-toggle v-model="row.required" dense :label="t('pages.catalog.containerRequiredLabel')" />
+                  <q-toggle v-model="row.critical" dense :label="t('pages.catalog.containerCriticalLabel')" />
+                  <q-btn
+                    flat
+                    round
+                    dense
+                    icon="delete"
+                    color="negative"
+                    :aria-label="t('pages.catalog.removeContainerAria')"
+                    @click="removeContainerRow(index)"
+                  />
+                </div>
                 <q-btn
                   flat
-                  round
                   dense
-                  icon="delete"
-                  color="negative"
-                  :aria-label="t('pages.catalog.removeContainerAria')"
-                  @click="removeContainerRow(index)"
+                  no-caps
+                  icon="add"
+                  color="primary"
+                  :label="t('pages.catalog.addContainer')"
+                  @click="addContainerRow"
                 />
-              </div>
-              <q-btn
-                flat
-                dense
-                no-caps
-                icon="add"
-                color="primary"
-                :label="t('pages.catalog.addContainer')"
-                @click="addContainerRow"
-              />
+              </template>
+              <template v-else>
+                <div class="text-caption">{{ t('pages.catalog.servicesSelectorTitle') }}</div>
+                <div
+                  v-for="(row, index) in serviceRows"
+                  :key="index"
+                  class="row q-col-gutter-sm items-center"
+                >
+                  <q-input
+                    v-model="row.name"
+                    outlined
+                    dense
+                    class="col"
+                    :label="t('pages.catalog.serviceNameLabel')"
+                  />
+                  <q-input
+                    v-model.number="row.replicas"
+                    outlined
+                    dense
+                    type="number"
+                    style="width: 110px"
+                    :label="t('pages.catalog.serviceReplicasLabel')"
+                  />
+                  <q-toggle v-model="row.required" dense :label="t('pages.catalog.containerRequiredLabel')" />
+                  <q-toggle v-model="row.critical" dense :label="t('pages.catalog.containerCriticalLabel')" />
+                  <q-btn
+                    flat
+                    round
+                    dense
+                    icon="delete"
+                    color="negative"
+                    :aria-label="t('pages.catalog.removeServiceAria')"
+                    @click="removeServiceRow(index)"
+                  />
+                </div>
+                <q-btn
+                  flat
+                  dense
+                  no-caps
+                  icon="add"
+                  color="primary"
+                  :label="t('pages.catalog.addService')"
+                  @click="addServiceRow"
+                />
+              </template>
               <q-separator />
               <div class="text-subtitle2">{{ t('pages.catalog.healthSectionTitle') }}</div>
               <q-select
@@ -795,6 +885,15 @@ const removeAction = async () => {
                   :options="portainerOperations"
                   outlined
                   :label="t('pages.catalog.operationLabel')"
+                  :rules="[required]"
+                />
+                <q-select
+                  v-model="portainerTarget"
+                  :options="portainerTargets"
+                  :option-label="(value) => t(`enums.portainerTarget.${value}`)"
+                  outlined
+                  :label="t('pages.catalog.targetLabel')"
+                  :hint="t('pages.catalog.targetHint')"
                   :rules="[required]"
                 />
               </template>

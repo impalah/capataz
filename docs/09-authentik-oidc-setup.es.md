@@ -18,9 +18,9 @@ Por tanto, el requisito clave en el lado de Authentik no es solo "crear una apli
 
 ## Requisitos previos
 
-- Una instancia de Authentik con acceso de administrador (`https://authentik.home.arpa` en los ejemplos siguientes).
+- Una instancia de Authentik con acceso de administrador (`https://authentik.404labo.net` en los ejemplos siguientes).
 - Los tres roles RBAC de Capataz definidos en `docs/02-contracts.md`: `capataz-viewer` < `capataz-operator` < `capataz-admin` (jerárquico solo dentro de Capataz — en Authentik son grupos independientes, ver nota en el paso 1).
-- Conectividad saliente desde el contenedor `api` hacia Authentik (para el discovery document y el JWKS) — si Authentik está en `.home.arpa`, ya cubierto por `CAPATAZ_HEALTH_ALLOWED_HOST_SUFFIXES` para los health checks, pero la verificación OIDC en sí no pasa por esas defensas SSRF (solo se aplican a URLs de servicio/health, no a la validación de tokens).
+- Conectividad saliente desde el contenedor `api` hacia Authentik (para el discovery document y el JWKS) — si Authentik está en `.404labo.net`, ya cubierto por `CAPATAZ_HEALTH_ALLOWED_HOST_SUFFIXES` para los health checks, pero la verificación OIDC en sí no pasa por esas defensas SSRF (solo se aplican a URLs de servicio/health, no a la validación de tokens).
 - Si tu Authentik (o Portainer/Grafana/Loki/Prometheus) está detrás de un certificado firmado por una **CA interna** (no pública) del homelab, `api`/`runner` necesitan confiar en ella explícitamente — ver "Problemas frecuentes" más abajo (`make trust-ca`). Sin esto, la petición al discovery document falla con `CERTIFICATE_VERIFY_FAILED` aunque el navegador no se queje (el navegador ya confía en tu CA; el contenedor Python, no, por defecto).
 
 ## 1. Crear los grupos RBAC en Authentik
@@ -60,7 +60,7 @@ En **Applications → Providers → Create → OAuth2/OpenID Provider**:
 | Authorization flow | `default-provider-authorization-explicit-consent` (o `-implicit-consent` si prefieres saltar la pantalla de consentimiento en un homelab de un solo usuario) | Flujo estándar de Authentik. |
 | Client type | **Public** | El frontend de Capataz es una SPA sin backend que pueda custodiar un `client_secret`; un client público fuerza PKCE (S256). |
 | Client ID | déjalo autogenerado o fíjalo tú (p. ej. `capataz`) | Este valor es el que irá en `CAPATAZ_OIDC_AUDIENCE`. |
-| Redirect URIs/Origins | `https://capataz.home.arpa/auth/callback` (strict) | Ruta fija que sirve `AuthCallbackPage.vue`; ajusta el host al dominio real de `frontend`. |
+| Redirect URIs/Origins | `https://capataz.404labo.net/auth/callback` (strict) | Ruta fija que sirve `AuthCallbackPage.vue`; ajusta el host al dominio real de `frontend`. |
 | Scopes | `openid`, `email`, `profile`, y el scope `groups` del paso 2 | `openid` es obligatorio; `email`/`profile` alimentan `Principal.email`; `groups` alimenta el RBAC. |
 | Signing Key | selecciona un certificado RSA (p. ej. el `authentik Self-signed Certificate` que Authentik trae por defecto) | `OidcIdentityProvider` solo acepta tokens firmados en `RS256`; sin una Signing Key asignada, un client público no puede recibir tokens firmados de forma verificable. |
 
@@ -73,7 +73,7 @@ Guarda el provider.
 En **Applications → Applications → Create**:
 
 - Name: `Capataz`.
-- Slug: `capataz` — este slug forma el issuer: `https://authentik.home.arpa/application/o/capataz/`.
+- Slug: `capataz` — este slug forma el issuer: `https://authentik.404labo.net/application/o/capataz/`.
 - Provider: el que creaste en el paso 3.
 - (Opcional) restringe la visibilidad de la aplicación en el launcher de Authentik a los tres grupos RBAC si no quieres que aparezca para todo el directorio.
 
@@ -83,7 +83,7 @@ En `.env` (o las variables de `docker-compose.yml`):
 
 ```bash
 CAPATAZ_AUTH_MODE=oidc
-CAPATAZ_OIDC_ISSUER=https://authentik.home.arpa/application/o/capataz/
+CAPATAZ_OIDC_ISSUER=https://authentik.404labo.net/application/o/capataz/
 CAPATAZ_OIDC_AUDIENCE=<Client ID del paso 3>
 CAPATAZ_OIDC_JWKS_URI=          # déjalo vacío: se descubre solo desde el issuer
 CAPATAZ_OIDC_GROUPS_CLAIM=groups
@@ -97,13 +97,13 @@ Reinicia `api` para que `Settings`/`main.py` reconstruyan `app.state.identity_pr
 
 1. Comprueba el discovery document:
    ```bash
-   curl -s https://authentik.home.arpa/application/o/capataz/.well-known/openid-configuration | jq .issuer,.jwks_uri
+   curl -s https://authentik.404labo.net/application/o/capataz/.well-known/openid-configuration | jq .issuer,.jwks_uri
    ```
    El campo `issuer` debe ser exactamente el valor que pusiste en `CAPATAZ_OIDC_ISSUER`.
 2. Obtén un `access_token` real completando el flujo Authorization Code + PKCE (con `curl`/Postman, o con la herramienta de "Test" de la aplicación en Authentik) y decodifícalo (p. ej. en [jwt.io](https://jwt.io) o `uv run python -c "import jwt; print(jwt.get_unverified_claims(...))"` desde `api/`) para confirmar que el payload incluye `"groups": ["capataz-..."]` y `"aud": "<client id>"`.
 3. Llama a la API con ese token:
    ```bash
-   curl -s -H "Authorization: Bearer <access_token>" https://capataz.home.arpa/api/v1/auth/me
+   curl -s -H "Authorization: Bearer <access_token>" https://capataz.404labo.net/api/v1/auth/me
    ```
    Debe devolver el `subject`, `email` y `groups` esperados. Un `401` con `AuthorizationError` en los logs de `api` casi siempre significa `iss`/`aud` desalineados o que el claim `groups` no llegó al access token (revisa el paso 2).
 
@@ -116,7 +116,7 @@ Reinicia `api` para que `Settings`/`main.py` reconstruyan `app.state.identity_pr
 
 ```bash
 # .env (usado por docker-compose.yml environment: del servicio frontend)
-CAPATAZ_FRONTEND_OIDC_ISSUER=https://authentik.home.arpa/application/o/capataz/
+CAPATAZ_FRONTEND_OIDC_ISSUER=https://authentik.404labo.net/application/o/capataz/
 CAPATAZ_FRONTEND_OIDC_CLIENT_ID=<el mismo Client ID del paso 3 / CAPATAZ_OIDC_AUDIENCE>
 CAPATAZ_FRONTEND_OIDC_SCOPE=openid profile email groups
 ```
@@ -127,7 +127,7 @@ docker compose up -d --force-recreate frontend
 
 Con `CAPATAZ_FRONTEND_OIDC_ISSUER`/`CAPATAZ_FRONTEND_OIDC_CLIENT_ID` vacíos (el valor por defecto), el frontend sigue sirviendo el modo `dev_mock` sin cambios — no hace falta tocar nada si no vas a usar OIDC todavía.
 
-Flujo resultante para el usuario: entra a `https://capataz.home.arpa/`, el guard de rutas (`frontend/src/router/index.ts`) detecta que no hay sesión y navega a `/login`, que redirige de inmediato al `authorization_endpoint` de Authentik; tras autenticarse vuelve a `/auth/callback`, que intercambia el `code` por tokens (PKCE, sin `client_secret`), llama a `GET /api/v1/auth/me` para poblar el store de sesión y navega a la ruta que el usuario pedía originalmente. "Cerrar sesión" en el menú de cuenta limpia la sesión local y, si Authentik expone `end_session_endpoint`, hace logout RP-initiated también allí.
+Flujo resultante para el usuario: entra a `https://capataz.404labo.net/`, el guard de rutas (`frontend/src/router/index.ts`) detecta que no hay sesión y navega a `/login`, que redirige de inmediato al `authorization_endpoint` de Authentik; tras autenticarse vuelve a `/auth/callback`, que intercambia el `code` por tokens (PKCE, sin `client_secret`), llama a `GET /api/v1/auth/me` para poblar el store de sesión y navega a la ruta que el usuario pedía originalmente. "Cerrar sesión" en el menú de cuenta limpia la sesión local y, si Authentik expone `end_session_endpoint`, hace logout RP-initiated también allí.
 
 ## 8. Personalizar las páginas de login/logout/cambio de contraseña al estilo de Capataz
 
@@ -135,7 +135,7 @@ El ejecutor de flujos de Authentik (login, logout, recuperación de contraseña,
 personaliza desde una **Brand de Authentik**, no con HTML por página — no hay override de
 plantilla por flujo en la UI de administración estándar. Todo lo de abajo se configura en
 **System → Brands → \<tu brand\>** (crea una brand no-default si aún no tienes una; se
-aplica al dominio o dominios que le asignes, p. ej. `authentik.home.arpa`).
+aplica al dominio o dominios que le asignes, p. ej. `authentik.404labo.net`).
 
 - **Branding title / Logo / Favicon**: campos simples bajo **Branding**. Sube
   `frontend/public/favicon.svg` tal cual (es un SVG con color propio, no depende de
@@ -164,7 +164,7 @@ aplicarlo:
 1. **System → Brands → \<tu brand\> → Branding → Custom CSS** → pega el contenido
    completo de `docs/assets/authentik-custom.css` → Update.
 2. Sube `frontend/public/favicon.svg` como **Logo** y como **Favicon**.
-3. Recarga `https://authentik.home.arpa/if/flow/default-authentication-flow/` (o el slug
+3. Recarga `https://authentik.404labo.net/if/flow/default-authentication-flow/` (o el slug
    de tu flujo de autenticación configurado) y compáralo con el propio `/login` de
    Capataz.
 
@@ -184,7 +184,7 @@ prevista.
 
 - **`Invalid OIDC access token` (403) en `/api/v1/auth/me`, y en los logs de `api` `[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate`**: Authentik (o el proxy delante) usa un certificado firmado por una **CA interna** del homelab, que el navegador ya conoce pero el contenedor `api` no — es una imagen Python mínima con solo las CAs públicas estándar. Arréglalo confiando en tu CA desde Capataz, **nunca** desactivando la verificación TLS:
   ```bash
-  make trust-ca CA_URL=http://pi-dns.home.arpa/ca.crt   # descarga tu CA y genera certs/ca-bundle.pem
+  make trust-ca CA_URL=http://pi-dns.404labo.net/ca.crt   # descarga tu CA y genera certs/ca-bundle.pem
   ```
   Añade a `.env`:
   ```bash

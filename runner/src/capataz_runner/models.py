@@ -19,6 +19,7 @@ class ServiceRecord(Base):
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
     portainer_environment_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    portainer_stack_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     container_selectors: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
 

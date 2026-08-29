@@ -12,12 +12,33 @@ class ContainerCatalog(BaseModel):
     critical: bool = False
 
 
+class ServiceSelectorCatalog(BaseModel):
+    """A Docker Swarm service, matched by ``{stack_name}_{name}`` (Docker's own naming), not by
+
+    a container name — Swarm mangles container names per-task/replica, so exact container-name
+    matching (as used for ``ContainerCatalog``) never matches a Swarm-deployed service.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    name: str
+    replicas: int = Field(default=1, ge=0, le=50)
+    required: bool = True
+    critical: bool = False
+
+
 class PortainerCatalog(BaseModel):
     model_config = ConfigDict(extra="forbid")
     environment_id: str | int
     stack_name: str | None = None
     aggregation: Literal["all_required", "any_healthy"] = "all_required"
-    containers: list[ContainerCatalog] = Field(min_length=1)
+    containers: list[ContainerCatalog] | None = None
+    services: list[ServiceSelectorCatalog] | None = None
+
+    @model_validator(mode="after")
+    def exactly_one_selector_kind(self) -> PortainerCatalog:
+        if bool(self.containers) == bool(self.services):
+            raise ValueError("portainer requires exactly one of containers or services")
+        return self
 
 
 class HealthCatalog(BaseModel):
@@ -49,11 +70,11 @@ class ActionCatalog(BaseModel):
         if self.action_type == ActionType.PORTAINER and (
             set(self.config) != {"operation", "target"}
             or self.config.get("operation") not in {"start", "stop", "restart", "logs"}
-            or self.config.get("target") != "selected_containers"
+            or self.config.get("target") not in {"selected_containers", "selected_services"}
         ):
             raise ValueError(
                 "Portainer config requires exactly an allowed operation and "
-                "selected_containers target"
+                "a selected_containers/selected_services target"
             )
         if self.action_type == ActionType.ANSIBLE:
             for key in ("playbook", "inventory"):
@@ -81,6 +102,22 @@ class ServiceCatalog(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     maintenance: bool = False
     actions: list[ActionCatalog] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def portainer_action_targets_match_selector_kind(self) -> ServiceCatalog:
+        if not self.portainer:
+            return self
+        expected = "selected_services" if self.portainer.services else "selected_containers"
+        for action in self.actions:
+            if (
+                action.action_type == ActionType.PORTAINER
+                and action.config.get("target") != expected
+            ):
+                raise ValueError(
+                    f"action '{action.key}' targets {action.config.get('target')} but "
+                    f"portainer declares {'services' if self.portainer.services else 'containers'}"
+                )
+        return self
 
 
 class Catalog(BaseModel):

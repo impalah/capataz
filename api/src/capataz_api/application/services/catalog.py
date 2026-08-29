@@ -6,7 +6,7 @@ from uuid import UUID
 import yaml
 from pydantic import ValidationError as PydanticValidationError
 
-from capataz_api.application.dto.catalog import Catalog, ServiceCatalog
+from capataz_api.application.dto.catalog import Catalog, PortainerCatalog, ServiceCatalog
 from capataz_api.application.ports import ServiceRepository
 from capataz_api.domain.entities import ActionDefinition, Service
 from capataz_api.domain.exceptions import FieldError
@@ -80,6 +80,21 @@ def parse_catalog_yaml(raw: str) -> Catalog:
         raise DomainValidationError(f"{len(errors)} validation error(s)", errors) from exc
 
 
+def _container_selectors(portainer: PortainerCatalog | None) -> dict[str, Any]:
+    if portainer is None:
+        return {}
+    if portainer.services is not None:
+        return {
+            "services": [entry.model_dump() for entry in portainer.services],
+            "aggregation": portainer.aggregation,
+        }
+    assert portainer.containers is not None  # enforced by PortainerCatalog's own validator
+    return {
+        "containers": [entry.model_dump() for entry in portainer.containers],
+        "aggregation": portainer.aggregation,
+    }
+
+
 def catalog_service_to_entity(item: ServiceCatalog) -> Service:
     portainer = item.portainer
     return Service(
@@ -93,12 +108,7 @@ def catalog_service_to_entity(item: ServiceCatalog) -> Service:
         documentation_url=str(item.documentation_url) if item.documentation_url else None,
         portainer_environment_id=str(portainer.environment_id) if portainer else None,
         portainer_stack_name=portainer.stack_name if portainer else None,
-        container_selectors={
-            "containers": [entry.model_dump() for entry in portainer.containers],
-            "aggregation": portainer.aggregation,
-        }
-        if portainer
-        else {},
+        container_selectors=_container_selectors(portainer),
         health_config=item.health.model_dump(mode="json") if item.health else {},
         grafana_config=item.grafana,
         loki_config=item.loki,

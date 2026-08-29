@@ -25,6 +25,7 @@ from capataz_api.domain.entities import ActionDefinition, Execution, Principal, 
 from capataz_api.domain.exceptions import (
     AuthorizationError,
     ConflictError,
+    ExternalServiceError,
     NotFoundError,
     ValidationError,
 )
@@ -325,6 +326,67 @@ async def test_delete_service_requires_existing_row_and_audits() -> None:
     await service.delete_service("one", principal=ADMIN, request_id="r1")
     assert await repo.get_service("one") is None
     assert repo.audit_events[-1]["action"] == "service.delete"
+
+
+@pytest.mark.asyncio
+async def test_get_links_resolves_a_deep_link_to_the_swarm_service() -> None:
+    """The list-page link alone forces the operator to search Portainer by hand; when the
+    platform can resolve the real Docker ID, `portainer` should point straight at it."""
+
+    class FakePlatform:
+        async def container_states(
+            self, environment_id: str, selectors: dict[str, Any]
+        ) -> list[dict[str, Any]]:
+            return []
+
+        async def find_link_target(
+            self, environment_id: str, selectors: dict[str, Any]
+        ) -> str | None:
+            assert selectors["stack_name"] == "authentik"
+            return "abc123"
+
+    repo = InMemoryServiceRepository()
+    await repo.upsert_service(
+        make_service(
+            "authentik",
+            portainer_environment_id="7",
+            portainer_stack_name="authentik",
+            container_selectors={"services": [{"name": "authentik-server"}]},
+        )
+    )
+    service = ServiceApplicationService(
+        repo, StatusService(FakeStatusCache(), FakePlatform(), None, 30)
+    )
+    links = await service.get_links(
+        "authentik", portainer_url="https://portainer.example", grafana_url=None, loki_url=None
+    )
+    assert links["portainer"] == "https://portainer.example/#!/7/docker/services/abc123"
+
+
+@pytest.mark.asyncio
+async def test_get_links_falls_back_to_the_list_page_when_portainer_is_unreachable() -> None:
+    class UnreachablePlatform:
+        async def container_states(
+            self, environment_id: str, selectors: dict[str, Any]
+        ) -> list[dict[str, Any]]:
+            return []
+
+        async def find_link_target(
+            self, environment_id: str, selectors: dict[str, Any]
+        ) -> str | None:
+            raise ExternalServiceError("Portainer is unavailable")
+
+    repo = InMemoryServiceRepository()
+    await repo.upsert_service(
+        make_service("one", portainer_environment_id="7", portainer_stack_name="one")
+    )
+    service = ServiceApplicationService(
+        repo, StatusService(FakeStatusCache(), UnreachablePlatform(), None, 30)
+    )
+    links = await service.get_links(
+        "one", portainer_url="https://portainer.example", grafana_url=None, loki_url=None
+    )
+    assert links["portainer"] == "https://portainer.example/#!/7/docker/containers"
 
 
 @pytest.mark.asyncio

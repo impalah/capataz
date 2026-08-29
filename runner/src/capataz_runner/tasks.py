@@ -63,6 +63,7 @@ async def _load_job(session: AsyncSession, execution_id: str) -> AutomationJob:
         action_config=action.config,
         service_container_selectors=service.container_selectors,
         portainer_environment_id=service.portainer_environment_id,
+        service_portainer_stack_name=service.portainer_stack_name,
         params=execution.params,
     )
 

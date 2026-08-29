@@ -65,8 +65,16 @@ def _validate_portainer_config(service: Service, config: dict[str, Any]) -> None
         raise ValidationError("Portainer config must contain only operation and target")
     if config.get("operation") not in _ALLOWED_PORTAINER_OPERATIONS:
         raise ValidationError("Unsupported Portainer operation")
-    if config.get("target") != "selected_containers" or not service.container_selectors:
-        raise ValidationError("Portainer target must be service-declared containers")
+    selectors = service.container_selectors
+    expected_target = (
+        "selected_services"
+        if selectors.get("services")
+        else "selected_containers"
+        if selectors.get("containers")
+        else None
+    )
+    if config.get("target") != expected_target:
+        raise ValidationError("Portainer target must match the service's declared selector kind")
 
 
 def _validate_ansible_config(config: dict[str, Any]) -> None:

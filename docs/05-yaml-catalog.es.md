@@ -23,7 +23,13 @@ Este documento describe **cada campo tal y como está implementado hoy**, con su
 
 ## `portainer`
 
+Un servicio declara **exactamente uno** de `containers` o `services` (nunca ambos, nunca ninguno — lo impone el propio validador de `PortainerCatalog`) según cómo esté desplegado:
+
+- `containers` — un despliegue standalone/Compose donde el contenedor mantiene un nombre fijo y predecible (p. ej. `docker run --name ollama` o un `container_name:` de Compose). Se empareja contra el listado de contenedores de Portainer por nombre exacto.
+- `services` — un service de Docker Swarm (`docker stack deploy`). Swarm no permite fijar el nombre de un contenedor y lo genera por tarea/réplica (`{stack}_{service}.{slot}.{task-id}`), así que el emparejamiento por nombre exacto nunca funciona para un servicio desplegado en Swarm — `services` empareja en su lugar contra el nombre de **service** de Swarm, estable y propio de Docker (`{stack_name}_{name}`), usando la API de Services de Docker Engine en vez del listado de contenedores.
+
 ```yaml
+# Contenedor standalone / docker-compose
 portainer:
   environment_id: 5
   stack_name: homelab-ryzen
@@ -34,21 +40,36 @@ portainer:
       critical: false
 ```
 
+```yaml
+# Servicio de Docker Swarm
+portainer:
+  environment_id: 7
+  stack_name: homelab-swarm
+  aggregation: all_required
+  services:
+    - name: authentik-server
+      replicas: 1
+      required: true
+      critical: false
+```
+
 | Campo | Descripción |
 |---|---|
-| `environment_id` | El **endpoint ID** de Portainer (no es libre): es el número que Portainer asigna a cada entorno registrado. Se obtiene en la UI de Portainer (**Environments**, columna del entorno) o consultando `GET {portainer_url}/api/endpoints` con el token de servicio (cabecera `X-API-Key`) — así es como se resolvió `environment_id` para cada nodo del clúster al dar de alta los 25 servicios nuevos del catálogo. El runner lo usa literalmente en la ruta `api/endpoints/{environment_id}/docker/containers/...` (`runner/src/capataz_runner/executor.py`), así que un valor incorrecto no falla la validación del YAML, falla en tiempo de ejecución contra Portainer. |
-| `stack_name` | **Puramente informativo.** Se persiste y se muestra en la tarjeta ("Stack: homelab-retaco") pero no se usa para resolver ni filtrar contenedores — el emparejamiento real de contenedores usa solo `containers[].name` (ver abajo). Conviene que coincida con la etiqueta real `com.docker.compose.project` del stack en Docker para que la información mostrada sea veraz, pero nada lo valida. |
-| `aggregation` | `all_required` (por defecto) o `any_healthy`. Determina cómo se combinan los contenedores observados para el estado agregado (`aggregate_status` en `application/policies/status.py`): con `all_required`, el servicio es `healthy` solo si **todos** los contenedores con `required: true` están corriendo (y sanos si Portainer reporta healthcheck); con `any_healthy`, basta con que **alguno** de los contenedores observados esté corriendo y sano. En ambos casos, si el healthcheck externo (`health:`) declarado falla, el servicio baja a `degraded`/`down` según el caso. |
+| `environment_id` | El **endpoint ID** de Portainer (no es libre): es el número que Portainer asigna a cada entorno registrado. Se obtiene en la UI de Portainer (**Environments**, columna del entorno) o consultando `GET {portainer_url}/api/endpoints` con el token de servicio (cabecera `X-API-Key`) — así es como se resolvió `environment_id` para cada nodo del clúster al dar de alta los 25 servicios nuevos del catálogo. El runner lo usa literalmente en la ruta `api/endpoints/{environment_id}/docker/containers/...` o `.../docker/services/...` (`runner/src/capataz_runner/executor.py`), así que un valor incorrecto no falla la validación del YAML, falla en tiempo de ejecución contra Portainer. |
+| `stack_name` | Con `containers`, es **puramente informativo** — se persiste y se muestra en la tarjeta ("Stack: homelab-retaco"), pero no se usa para resolver ni filtrar contenedores (solo `containers[].name` se usa para eso). Con `services`, **sí se usa**: cada nombre de servicio declarado se resuelve como `{stack_name}_{name}` contra el listado de services de Swarm, exactamente igual que nombra las cosas `docker stack deploy -c file.yml {stack_name}` — un `stack_name` incorrecto aquí significa que ningún servicio va a emparejar nunca. |
+| `aggregation` | `all_required` (por defecto) o `any_healthy`. Determina cómo se combinan los contenedores/servicios observados para el estado agregado (`aggregate_status` en `application/policies/status.py`): con `all_required`, el servicio es `healthy` solo si **todos** los elementos con `required: true` están corriendo (y sanos — para un servicio Swarm, "sano" significa que su número de tareas corriendo coincide con el deseado); con `any_healthy`, basta con que **alguno** esté corriendo y sano. En ambos casos, si el healthcheck externo (`health:`) declarado falla, el servicio baja a `degraded`/`down` según el caso. |
 | `containers[].name` | Nombre **exacto** del contenedor en Docker (`docker ps --format '{{.Names}}'` en el nodo, o el nombre visible en Portainer). Es el único dato que el runner y el `StatusService` usan para localizar el contenedor dentro del `environment_id` declarado — no se acepta un ID de contenedor suministrado por el cliente en ningún punto del flujo. |
-| `containers[].required` | Por defecto `true`. Si es `false`, el contenedor se observa e informa pero no cuenta para decidir si el servicio está `down` cuando `aggregation: all_required`. |
-| `containers[].critical` | Por defecto `false`. Si es `true` y ese contenedor concreto no está corriendo, el servicio se marca `down` **incondicionalmente**, sin importar el valor de `aggregation` ni el estado de los demás contenedores. |
+| `containers[].required` / `containers[].critical` | Por defecto `true`/`false`. `required: false` significa que el contenedor se observa e informa pero no cuenta para `down` bajo `aggregation: all_required`. `critical: true` marca el servicio `down` incondicionalmente cuando ese contenedor concreto no está corriendo, sin importar `aggregation` ni el estado de los demás. |
+| `services[].name` | El nombre corto del service de Swarm, **sin** el prefijo del stack (p. ej. `authentik-server`, no `homelab-swarm_authentik-server`) — el nombre completo se deriva de `stack_name` + este campo. |
+| `services[].replicas` | 0–50, por defecto `1`. El número de réplicas al que una acción `start` reescala el servicio, y contra el que se compara `RunningTasks` para decidir si está sano/completamente escalado. Si el servicio se reescala alguna vez fuera de Capataz (`docker service scale`), el siguiente `start`/`restart` desde Capataz lo volverá a dejar en este valor declarado — hay que mantenerlo sincronizado con la capacidad deseada real. |
+| `services[].required` / `services[].critical` | Misma semántica que sus equivalentes en `containers[]`. |
 
 ## `health`
 
 ```yaml
 health:
   type: http
-  url: https://openwebui.home.arpa/health
+  url: https://openwebui.404labo.net/health
   expected_status: 200
   timeout_seconds: 5
 ```
@@ -56,7 +77,7 @@ health:
 | Campo | Descripción |
 |---|---|
 | `type` | `http` o `tcp` en el esquema (`Literal["http", "tcp"]`), pero **solo `http` está implementado**: `HttpHealthProber` (`adapters/outbound/health.py`) siempre hace una petición HTTP GET, cualquiera que sea el valor de `type`. Declarar `type: tcp` no lanza un error de validación ni hace un connect TCP real — hoy se comporta exactamente igual que `http`. No lo uses hasta que este ítem se implemente. |
-| `url` | Debe ser `http`/`https` con hostname. Sujeta a defensa SSRF real (`validate_health_url`): se rechaza si el host es una IP (salvo que además termine en un sufijo permitido), si resuelve a loopback/link-local/rango privado, o si el hostname no termina en uno de los sufijos de `CAPATAZ_HEALTH_ALLOWED_HOST_SUFFIXES` (por defecto `.home.arpa`; ver `core/settings.py`). Esta es la **única** URL del catálogo que la API llega a solicitar por sí misma; `service_url`/`documentation_url` no pasan por aquí porque nunca se piden desde el servidor. |
+| `url` | Debe ser `http`/`https` con hostname. Sujeta a defensa SSRF real (`validate_health_url`): se rechaza si el host es una IP (salvo que además termine en un sufijo permitido), si resuelve a loopback/link-local/rango privado, o si el hostname no termina en uno de los sufijos de `CAPATAZ_HEALTH_ALLOWED_HOST_SUFFIXES` (por defecto `.404labo.net`; ver `core/settings.py`). Esta es la **única** URL del catálogo que la API llega a solicitar por sí misma; `service_url`/`documentation_url` no pasan por aquí porque nunca se piden desde el servidor. |
 | `expected_status` | Código HTTP considerado "sano" (100–599, por defecto `200`). |
 | `timeout_seconds` | 1–60, por defecto `5`. |
 
@@ -118,11 +139,13 @@ Solo se acepta exactamente esta forma — cualquier otra clave, o un valor fuera
 
 ```yaml
 config:
-  operation: restart   # start | stop | restart | logs
-  target: selected_containers   # único valor aceptado
+  operation: restart              # start | stop | restart | logs
+  target: selected_containers     # selected_containers | selected_services
 ```
 
-`target` siempre debe ser el literal `selected_containers`: nunca se acepta un ID de contenedor específico desde el cliente/catálogo — el runner resuelve los contenedores reales a partir de `service.container_selectors` (el bloque `portainer.containers` de más arriba), nunca desde `config`.
+`target` debe ser `selected_containers` o `selected_services`, y **debe coincidir con el tipo de selector declarado en el propio bloque `portainer` del servicio** (`selected_services` cuando declara `services`, `selected_containers` cuando declara `containers` — un desajuste se rechaza en tiempo de validación del catálogo, en el propio validador de `ServiceCatalog`). Nunca se acepta un ID de contenedor/servicio específico desde el cliente/catálogo — el runner resuelve el destino real a partir de `service.container_selectors` (el bloque `portainer.containers`/`portainer.services`), nunca desde `config`.
+
+Para `selected_services`, las cuatro operaciones se traducen a la API de Services de Docker Swarm en vez de a los verbos start/stop/restart/logs de contenedor (un service de Swarm no los tiene): `restart` es un **force update** (equivalente a `docker service update --force` — redespliega todas las tareas con el mismo spec/imagen), `logs` agrega los logs de todas las tareas del servicio, y `stop`/`start` **escalan réplicas a 0 / de vuelta al `services[].replicas` declarado** — no eliminan ni recrean el servicio. Como `start` siempre reafirma el valor declarado en `replicas`, un servicio reescalado fuera de Capataz volverá a ese valor en el siguiente `start`/`restart` lanzado desde Capataz.
 
 ### `config` para `action_type: ansible`
 

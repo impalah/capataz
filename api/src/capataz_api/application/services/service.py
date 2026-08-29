@@ -6,7 +6,7 @@ from capataz_api.application.policies import build_audit_event, resolve_links
 from capataz_api.application.ports import ServiceRepository
 from capataz_api.application.services.status import StatusService
 from capataz_api.domain.entities import Principal, Service
-from capataz_api.domain.exceptions import ConflictError, NotFoundError
+from capataz_api.domain.exceptions import ConflictError, ExternalServiceError, NotFoundError
 
 
 class ServiceApplicationService:
@@ -109,4 +109,22 @@ class ServiceApplicationService:
         loki_url: str | None,
     ) -> dict[str, str]:
         service = await self.get_service(service_id)
-        return resolve_links(service, portainer_url, grafana_url, loki_url)
+        links = resolve_links(service, portainer_url, grafana_url, loki_url)
+        platform = self._status_service.platform
+        if "portainer" in links and platform is not None and portainer_url:
+            selectors = {**service.container_selectors, "stack_name": service.portainer_stack_name}
+            try:
+                target_id = await platform.find_link_target(
+                    service.portainer_environment_id or "", selectors
+                )
+            except ExternalServiceError:
+                # The deep link is a convenience; fall back to the list-page link already in
+                # `links` rather than failing the whole request when Portainer is unreachable.
+                target_id = None
+            if target_id:
+                kind = "services" if selectors.get("services") else "containers"
+                links["portainer"] = (
+                    f"{portainer_url.rstrip('/')}/#!/{service.portainer_environment_id}"
+                    f"/docker/{kind}/{target_id}"
+                )
+        return links

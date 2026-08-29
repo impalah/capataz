@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     log_json: bool = False
     celery_queue: str = "automation"
     celery_concurrency: int = 2
-    portainer_url: str = "https://portainer.home.arpa"
+    portainer_url: str = "https://portainer.404labo.net"
     http_timeout_seconds: float = 5.0
     # actions.py allow-lists action.timeout_seconds in [1, 900]; these three defaults keep enough
     # margin above that real max (a shipped example action already uses 600s) so that neither the

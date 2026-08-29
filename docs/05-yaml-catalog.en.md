@@ -23,7 +23,13 @@ This document describes **each field exactly as it is implemented today**, with 
 
 ## `portainer`
 
+A service declares **exactly one** of `containers` or `services` (never both, never neither — enforced by `PortainerCatalog`'s own validator) depending on how it's deployed:
+
+- `containers` — a standalone/Compose deployment where the container keeps a fixed, predictable name (e.g. `docker run --name ollama` or a Compose `container_name:`). Matched against Portainer's raw container listing by exact name.
+- `services` — a Docker Swarm service (`docker stack deploy`). Swarm forbids fixing a container name and mangles it per task/replica (`{stack}_{service}.{slot}.{task-id}`), so exact-name matching never works for a Swarm-deployed service — `services` matches Docker's own stable Swarm **service** name (`{stack_name}_{name}`) instead, via the Docker Engine Services API rather than the container-listing endpoint.
+
 ```yaml
+# Standalone / docker-compose container
 portainer:
   environment_id: 5
   stack_name: homelab-ryzen
@@ -34,21 +40,36 @@ portainer:
       critical: false
 ```
 
+```yaml
+# Docker Swarm service
+portainer:
+  environment_id: 7
+  stack_name: homelab-swarm
+  aggregation: all_required
+  services:
+    - name: authentik-server
+      replicas: 1
+      required: true
+      critical: false
+```
+
 | Field | Description |
 |---|---|
-| `environment_id` | Portainer's **endpoint ID** (not free-form): the number Portainer assigns to each registered environment. It's obtained in the Portainer UI (**Environments**, environment column) or by querying `GET {portainer_url}/api/endpoints` with the service token (`X-API-Key` header) — this is how `environment_id` was resolved for each cluster node when the catalog's 25 new services were onboarded. The runner uses it literally in the path `api/endpoints/{environment_id}/docker/containers/...` (`runner/src/capataz_runner/executor.py`), so an incorrect value doesn't fail YAML validation — it fails at runtime against Portainer. |
-| `stack_name` | **Purely informational.** It's persisted and shown on the card ("Stack: homelab-retaco") but is not used to resolve or filter containers — the actual container matching only uses `containers[].name` (see below). It should match the stack's real `com.docker.compose.project` label in Docker so the displayed information is accurate, but nothing validates this. |
-| `aggregation` | `all_required` (default) or `any_healthy`. Determines how observed containers are combined for the aggregate status (`aggregate_status` in `application/policies/status.py`): with `all_required`, the service is `healthy` only if **all** containers with `required: true` are running (and healthy if Portainer reports a healthcheck); with `any_healthy`, it's enough for **any one** of the observed containers to be running and healthy. In both cases, if the declared external healthcheck (`health:`) fails, the service drops to `degraded`/`down` as applicable. |
+| `environment_id` | Portainer's **endpoint ID** (not free-form): the number Portainer assigns to each registered environment. It's obtained in the Portainer UI (**Environments**, environment column) or by querying `GET {portainer_url}/api/endpoints` with the service token (`X-API-Key` header) — this is how `environment_id` was resolved for each cluster node when the catalog's 25 new services were onboarded. The runner uses it literally in the path `api/endpoints/{environment_id}/docker/containers/...` or `.../docker/services/...` (`runner/src/capataz_runner/executor.py`), so an incorrect value doesn't fail YAML validation — it fails at runtime against Portainer. |
+| `stack_name` | With `containers`, it's **purely informational** — persisted and shown on the card ("Stack: homelab-retaco"), but not used to resolve or filter containers (only `containers[].name` is). With `services`, it **is used**: each declared service name is resolved as `{stack_name}_{name}` against Docker's Swarm service listing, exactly matching what `docker stack deploy -c file.yml {stack_name}` names things — an incorrect `stack_name` here means no service ever matches. |
+| `aggregation` | `all_required` (default) or `any_healthy`. Determines how observed containers/services are combined for the aggregate status (`aggregate_status` in `application/policies/status.py`): with `all_required`, the service is `healthy` only if **all** entries with `required: true` are running (and healthy — for a Swarm service, "healthy" means its running task count matches its desired task count); with `any_healthy`, it's enough for **any one** to be running and healthy. In both cases, if the declared external healthcheck (`health:`) fails, the service drops to `degraded`/`down` as applicable. |
 | `containers[].name` | The container's **exact** name in Docker (`docker ps --format '{{.Names}}'` on the node, or the name visible in Portainer). It's the only piece of data the runner and `StatusService` use to locate the container within the declared `environment_id` — a client-supplied container ID is never accepted anywhere in the flow. |
-| `containers[].required` | Defaults to `true`. If `false`, the container is observed and reported but doesn't count toward deciding whether the service is `down` when `aggregation: all_required`. |
-| `containers[].critical` | Defaults to `false`. If `true` and that specific container is not running, the service is marked `down` **unconditionally**, regardless of the `aggregation` value or the state of the other containers. |
+| `containers[].required` / `containers[].critical` | Defaults `true`/`false`. `required: false` means the container is observed and reported but doesn't count toward `down` under `aggregation: all_required`. `critical: true` marks the service `down` unconditionally whenever that specific container isn't running, regardless of `aggregation` or the other containers' state. |
+| `services[].name` | The Swarm service's short name, **without** the stack prefix (e.g. `authentik-server`, not `homelab-swarm_authentik-server`) — the full name is derived from `stack_name` + this field. |
+| `services[].replicas` | 0–50, defaults to `1`. The replica count a `start` action scales the service back up to, and what a healthy/fully-scaled read compares `RunningTasks` against. If the service is ever rescaled outside Capataz (`docker service scale`), the next `start`/`restart` from Capataz will re-scale it back down/up to this declared value — keep it in sync with the real desired capacity. |
+| `services[].required` / `services[].critical` | Same semantics as the `containers[]` equivalents above. |
 
 ## `health`
 
 ```yaml
 health:
   type: http
-  url: https://openwebui.home.arpa/health
+  url: https://openwebui.404labo.net/health
   expected_status: 200
   timeout_seconds: 5
 ```
@@ -56,7 +77,7 @@ health:
 | Field | Description |
 |---|---|
 | `type` | `http` or `tcp` in the schema (`Literal["http", "tcp"]`), but **only `http` is implemented**: `HttpHealthProber` (`adapters/outbound/health.py`) always makes an HTTP GET request, whatever the value of `type`. Declaring `type: tcp` doesn't raise a validation error nor does a real TCP connect — today it behaves exactly like `http`. Don't use it until this item is implemented. |
-| `url` | Must be `http`/`https` with a hostname. Subject to real SSRF defense (`validate_health_url`): it's rejected if the host is an IP (unless it also ends in an allowed suffix), if it resolves to loopback/link-local/private range, or if the hostname doesn't end in one of the `CAPATAZ_HEALTH_ALLOWED_HOST_SUFFIXES` suffixes (defaults to `.home.arpa`; see `core/settings.py`). This is the **only** catalog URL the API ever requests itself; `service_url`/`documentation_url` don't go through this because they're never requested from the server. |
+| `url` | Must be `http`/`https` with a hostname. Subject to real SSRF defense (`validate_health_url`): it's rejected if the host is an IP (unless it also ends in an allowed suffix), if it resolves to loopback/link-local/private range, or if the hostname doesn't end in one of the `CAPATAZ_HEALTH_ALLOWED_HOST_SUFFIXES` suffixes (defaults to `.404labo.net`; see `core/settings.py`). This is the **only** catalog URL the API ever requests itself; `service_url`/`documentation_url` don't go through this because they're never requested from the server. |
 | `expected_status` | HTTP code considered "healthy" (100–599, defaults to `200`). |
 | `timeout_seconds` | 1–60, defaults to `5`. |
 
@@ -118,11 +139,13 @@ Only exactly this shape is accepted — any other key, or a value outside these 
 
 ```yaml
 config:
-  operation: restart   # start | stop | restart | logs
-  target: selected_containers   # only accepted value
+  operation: restart              # start | stop | restart | logs
+  target: selected_containers     # selected_containers | selected_services
 ```
 
-`target` must always be the literal `selected_containers`: a specific container ID is never accepted from the client/catalog — the runner resolves the actual containers from `service.container_selectors` (the `portainer.containers` block above), never from `config`.
+`target` must be `selected_containers` or `selected_services`, and **must match the selector kind declared under the service's own `portainer` block** (`selected_services` when it declares `services`, `selected_containers` when it declares `containers` — a mismatch is rejected at catalog-validation time by `ServiceCatalog`'s own validator). A specific container/service ID is never accepted from the client/catalog — the runner resolves the actual target from `service.container_selectors` (the `portainer.containers`/`portainer.services` block), never from `config`.
+
+For `selected_services`, the four operations map onto the Docker Swarm Services API rather than the container start/stop/restart/logs verbs (Swarm services don't have those): `restart` is a **force update** (`docker service update --force` equivalent — redeploys every task, same image/spec), `logs` aggregates logs across all of the service's tasks, and `stop`/`start` **scale replicas to 0 / back up to the declared `services[].replicas`** — they don't remove or recreate the service. Because `start` always re-asserts the declared `replicas` value, a service rescaled outside Capataz will be reset to that value by the next `start`/`restart` from Capataz.
 
 ### `config` for `action_type: ansible`
 

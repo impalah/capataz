@@ -6,7 +6,7 @@ SERVICE ?=
 name ?=
 API_URL ?= http://localhost:8000/api/v1
 API_AUTHORIZATION ?=
-CA_URL ?= http://pi-dns.home.arpa/ca.crt
+CA_URL ?= http://pi-dns.404labo.net/ca.crt
 
 .PHONY: help bootstrap up down logs ps build test test-unit test-integration test-e2e lint format typecheck coverage migrate migration seed-catalog export-catalog clean security-scan trust-ca
 

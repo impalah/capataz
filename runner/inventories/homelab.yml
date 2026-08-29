@@ -7,6 +7,6 @@ all:
     homelab:
       hosts:
         node-ai-01:
-          ansible_host: node-ai-01.home.arpa
+          ansible_host: node-ai-01.404labo.net
         node-gpu-01:
-          ansible_host: node-gpu-01.home.arpa
+          ansible_host: node-gpu-01.404labo.net

@@ -57,7 +57,7 @@ The key belongs to an automation account, with no human login or reuse, with per
 
 On import/CRUD only `http` and `https` are allowed, the destination is resolved and validated before connecting, loopback, link-local, RFC1918/cloud metadata are denied except via an explicit homelab allow-list, redirects to new destinations are prevented, and short timeouts are enforced. The refresh endpoint receives a service ID, never a URL. Responses must not reflect sensitive remote bodies.
 
-**Known residual risk — DNS rebinding:** `validate_health_url` validates the hostname string against the suffix allow-list, but doesn't resolve or pin the IP that `httpx` ends up connecting to — a hostname allowed by suffix whose internal DNS resolves (at request time) to an unexpected private/loopback/metadata IP would pass validation. This is accepted as low risk given the homelab's closed trust model (the DNS resolving `.home.arpa` is owned by the operator), but it is a real gap against the literal SSRF requirement if that trust boundary ever changes.
+**Known residual risk — DNS rebinding:** `validate_health_url` validates the hostname string against the suffix allow-list, but doesn't resolve or pin the IP that `httpx` ends up connecting to — a hostname allowed by suffix whose internal DNS resolves (at request time) to an unexpected private/loopback/metadata IP would pass validation. This is accepted as low risk given the homelab's closed trust model (the DNS resolving `.404labo.net` is owned by the operator), but it is a real gap against the literal SSRF requirement if that trust boundary ever changes.
 
 ## Operational Hardening
 

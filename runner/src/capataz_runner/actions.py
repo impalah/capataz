@@ -10,6 +10,7 @@ from typing import Any, Literal
 
 ALLOWED_ACTION_TYPES = frozenset({"ansible", "portainer"})
 ALLOWED_PORTAINER_OPERATIONS = frozenset({"start", "stop", "restart", "logs"})
+ALLOWED_PORTAINER_TARGETS = frozenset({"selected_containers", "selected_services"})
 ALLOWED_PLAYBOOKS = frozenset(
     {
         "playbooks/restart_service.yml",
@@ -41,6 +42,7 @@ class ResolvedAnsibleAction:
 @dataclass(frozen=True)
 class ResolvedPortainerAction:
     operation: Literal["start", "stop", "restart", "logs"]
+    target: Literal["selected_containers", "selected_services"] = "selected_containers"
 
 
 def _mapping(value: object, field: str) -> dict[str, Any]:
@@ -81,12 +83,15 @@ def resolve_action(
         raise ActionConfigurationError("action_type is not supported by the V1 runner")
     values = _mapping(config, "config")
     if action_type == "portainer":
-        if set(values) != {"operation", "target"} or values.get("target") != "selected_containers":
-            raise ActionConfigurationError("Portainer config must target selected_containers only")
+        target = values.get("target")
+        if set(values) != {"operation", "target"} or target not in ALLOWED_PORTAINER_TARGETS:
+            raise ActionConfigurationError(
+                "Portainer config must target selected_containers or selected_services"
+            )
         operation = values.get("operation")
         if operation not in ALLOWED_PORTAINER_OPERATIONS:
             raise ActionConfigurationError("Portainer operation is not allow-listed")
-        return ResolvedPortainerAction(operation=operation)
+        return ResolvedPortainerAction(operation=operation, target=target)
 
     allowed_keys = {"playbook", "inventory", "limit", "extra_vars", "timeout_seconds"}
     if not set(values).issubset(allowed_keys):

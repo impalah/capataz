@@ -46,6 +46,9 @@ class ContainerPlatformPort(Protocol):
     async def container_states(
         self, environment_id: str, selectors: dict[str, Any]
     ) -> list[dict[str, Any]]: ...
+    async def find_link_target(
+        self, environment_id: str, selectors: dict[str, Any]
+    ) -> str | None: ...
 
 
 class HealthProbePort(Protocol):

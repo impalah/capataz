@@ -29,9 +29,16 @@ export interface ContainerSelector {
   required?: boolean
   critical?: boolean
 }
+export interface ServiceSelector {
+  name: string
+  replicas?: number
+  required?: boolean
+  critical?: boolean
+}
 export interface ContainerSelectors {
   aggregation?: 'all_required' | 'any_healthy'
   containers?: ContainerSelector[]
+  services?: ServiceSelector[]
 }
 export interface HealthConfig {
   type?: 'http' | 'tcp'

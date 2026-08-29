@@ -11,7 +11,9 @@ def resolve_links(
         if value := getattr(service, attr):
             links[key] = value
     if portainer_url and getattr(service, "portainer_environment_id", None):
-        path = f"#!/{service.portainer_environment_id}/docker/containers"
+        selectors = getattr(service, "container_selectors", {}) or {}
+        kind = "services" if selectors.get("services") else "containers"
+        path = f"#!/{service.portainer_environment_id}/docker/{kind}"
         links["portainer"] = f"{portainer_url.rstrip('/')}/{path}"
     grafana = getattr(service, "grafana_config", {})
     if grafana_url and grafana.get("dashboard_uid"):

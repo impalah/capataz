@@ -30,8 +30,12 @@ class StatusService:
         errors: list[str] = []
         if service.portainer_environment_id and self.platform:
             try:
+                selectors = {
+                    **service.container_selectors,
+                    "stack_name": service.portainer_stack_name,
+                }
                 rows = await self.platform.container_states(
-                    service.portainer_environment_id, service.container_selectors
+                    service.portainer_environment_id, selectors
                 )
             except ExternalServiceError as exc:
                 available = False

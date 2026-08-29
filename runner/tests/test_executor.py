@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import signal
 from pathlib import Path
 from typing import Any
@@ -196,6 +197,118 @@ def test_container_resolution_requires_service_selectors() -> None:
         resolve_selected_container_ids(containers, {"containers": [{"name": "no-match"}]})
 
 
+def test_service_resolution_requires_service_selectors() -> None:
+    from capataz_runner.actions import ActionConfigurationError
+    from capataz_runner.executor import resolve_selected_services
+
+    services = [
+        {"ID": "svc-1", "Spec": {"Name": "homelab-swarm_authentik-server"}},
+        {"ID": "svc-2", "Spec": {"Name": "homelab-swarm_other"}},
+    ]
+    selectors = {"services": [{"name": "authentik-server", "replicas": 1}]}
+    matched = resolve_selected_services(services, selectors, "homelab-swarm")
+    assert [service_id for service_id, _service, _spec in matched] == ["svc-1"]
+    with pytest.raises(ActionConfigurationError):
+        resolve_selected_services(services, {}, "homelab-swarm")
+    with pytest.raises(ActionConfigurationError):
+        resolve_selected_services(services, {"services": [{"name": "no-match"}]}, "homelab-swarm")
+
+
+@pytest.mark.asyncio
+async def test_portainer_client_force_updates_swarm_service_on_restart(
+    monkeypatch: pytest.MonkeyPatch, secrets_dir: Path
+) -> None:
+    """restart on a selected_services target must re-post the spec with ForceUpdate bumped."""
+    update_calls: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/services"):
+            return httpx.Response(
+                200, json=[{"ID": "svc-1", "Spec": {"Name": "homelab-swarm_authentik-server"}}]
+            )
+        if request.url.path.endswith("/svc-1"):
+            return httpx.Response(
+                200,
+                json={
+                    "Version": {"Index": 7},
+                    "Spec": {
+                        "Name": "homelab-swarm_authentik-server",
+                        "TaskTemplate": {"ForceUpdate": 0},
+                        "Mode": {"Replicated": {"Replicas": 1}},
+                    },
+                },
+            )
+        if request.url.path.endswith("/svc-1/update"):
+            update_calls.append({"params": dict(request.url.params), "body": request.content})
+            return httpx.Response(200, json={"Warnings": []})
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    real_async_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        "capataz_runner.executor.httpx.AsyncClient",
+        lambda *args, **kwargs: real_async_client(*args, transport=transport, **kwargs),
+    )
+    client = PortainerClient(configured_settings(secrets_dir))
+    result = await client.execute(
+        ResolvedPortainerAction(operation="restart", target="selected_services"),
+        "7",
+        {"services": [{"name": "authentik-server", "replicas": 1}]},
+        "homelab-swarm",
+    )
+    assert result.status == "succeeded"
+    assert update_calls[0]["params"]["version"] == "7"
+    body = json.loads(update_calls[0]["body"])
+    assert body["TaskTemplate"]["ForceUpdate"] == 1
+    assert body["Mode"]["Replicated"]["Replicas"] == 1
+
+
+@pytest.mark.asyncio
+async def test_portainer_client_scales_swarm_service_on_stop(
+    monkeypatch: pytest.MonkeyPatch, secrets_dir: Path
+) -> None:
+    """stop on a selected_services target must scale replicas to 0, not remove the service."""
+    update_calls: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/services"):
+            return httpx.Response(
+                200, json=[{"ID": "svc-1", "Spec": {"Name": "homelab-swarm_authentik-server"}}]
+            )
+        if request.url.path.endswith("/svc-1") and request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "Version": {"Index": 3},
+                    "Spec": {
+                        "Name": "homelab-swarm_authentik-server",
+                        "TaskTemplate": {},
+                        "Mode": {"Replicated": {"Replicas": 2}},
+                    },
+                },
+            )
+        if request.url.path.endswith("/svc-1/update"):
+            update_calls.append(json.loads(request.content))
+            return httpx.Response(200, json={"Warnings": []})
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    real_async_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        "capataz_runner.executor.httpx.AsyncClient",
+        lambda *args, **kwargs: real_async_client(*args, transport=transport, **kwargs),
+    )
+    client = PortainerClient(configured_settings(secrets_dir))
+    result = await client.execute(
+        ResolvedPortainerAction(operation="stop", target="selected_services"),
+        "7",
+        {"services": [{"name": "authentik-server", "replicas": 3}]},
+        "homelab-swarm",
+    )
+    assert result.status == "succeeded"
+    assert update_calls[0]["Mode"]["Replicated"]["Replicas"] == 0
+
+
 @pytest.mark.asyncio
 async def test_execution_timeout_is_capped_by_settings_ceiling(
     monkeypatch: pytest.MonkeyPatch, secrets_dir: Path
@@ -253,7 +366,11 @@ async def test_persistent_executor_uses_portainer_only_for_selected_containers(
 
     class FakePortainer:
         async def execute(
-            self, operation: object, environment_id: str, selectors: object
+            self,
+            operation: object,
+            environment_id: str,
+            selectors: object,
+            stack_name: object = None,
         ) -> ExecutionResult:
             assert environment_id == "3"
             assert selectors == {

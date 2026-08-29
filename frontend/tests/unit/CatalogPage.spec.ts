@@ -43,6 +43,19 @@ const richService: Service = {
   grafana_config: { dashboard_uid: 'dash-1', variables: { service: 'open-webui' } },
   loki_config: { query: '{compose_service="open-webui"}' },
 }
+const swarmService: Service = {
+  id: 'authentik',
+  name: 'Authentik',
+  group_name: 'Seguridad',
+  environment: 'homelab',
+  version: 5,
+  portainer_environment_id: '7',
+  portainer_stack_name: 'authentik',
+  container_selectors: {
+    aggregation: 'all_required',
+    services: [{ name: 'authentik-server', replicas: 1, required: true, critical: false }],
+  },
+}
 const action: ActionDefinition = {
   id: 'a1',
   service_id: 'open-webui',
@@ -82,6 +95,11 @@ describe('CatalogPage', () => {
   it('loads and lists catalog services on mount', async () => {
     const { wrapper } = await mountPage()
     expect(wrapper.text()).toContain('Open WebUI')
+  })
+
+  it('fetches beyond the API default page size so no catalog service is silently hidden', async () => {
+    await mountPage()
+    expect(api.services).toHaveBeenCalledWith({ limit: '100' })
   })
 
   it('dry-run validates the YAML and shows the resulting summary', async () => {
@@ -508,6 +526,76 @@ describe('CatalogPage', () => {
         grafana_config: { dashboard_uid: 'dash-1', variables: {} },
         loki_config: { query: '{compose_service="open-webui"}' },
       }),
+    )
+  })
+
+  it('round-trips a Docker Swarm service (services selector) without collapsing it into containers', async () => {
+    vi.mocked(api.services).mockResolvedValue({ items: [swarmService], total: 1, offset: 0, limit: 50 })
+    vi.mocked(api.updateService).mockResolvedValue(swarmService)
+    const { wrapper } = await mountPage()
+
+    await wrapper.get(`[aria-label="Editar ${swarmService.name}"]`).trigger('click')
+    await flushPromises()
+
+    const selectorKindSelect = wrapper
+      .findAllComponents({ name: 'QSelect' })
+      .find((select) => select.props('label') === 'Tipo de selector')
+    expect(selectorKindSelect?.props('modelValue')).toBe('services')
+
+    const serviceNameInput = wrapper
+      .findAllComponents({ name: 'QInput' })
+      .find((input) => input.props('label') === 'Nombre del servicio')
+    expect(serviceNameInput?.props('modelValue')).toBe('authentik-server')
+
+    const saveBtn = wrapper.findAll('button').find((button) => button.text() === 'Guardar')
+    await saveBtn?.trigger('click')
+    await flushPromises()
+
+    expect(api.updateService).toHaveBeenCalledWith(
+      'authentik',
+      expect.objectContaining({
+        portainer_stack_name: 'authentik',
+        container_selectors: {
+          aggregation: 'all_required',
+          services: [{ name: 'authentik-server', replicas: 1, required: true, critical: false }],
+        },
+      }),
+    )
+  })
+
+  it('preserves a portainer action target of selected_services when the action is re-saved unchanged', async () => {
+    const swarmAction: ActionDefinition = {
+      id: 'a2',
+      service_id: 'authentik',
+      key: 'restart',
+      label: 'Reiniciar',
+      action_type: 'portainer',
+      risk_level: 'operate',
+      requires_confirmation: false,
+      enabled: true,
+      config: { operation: 'restart', target: 'selected_services' },
+    }
+    vi.mocked(api.services).mockResolvedValue({ items: [swarmService], total: 1, offset: 0, limit: 50 })
+    vi.mocked(api.actions).mockResolvedValue([swarmAction])
+    vi.mocked(api.updateAction).mockResolvedValue(swarmAction)
+    const { wrapper } = await mountPage()
+
+    await wrapper.get(`[aria-label="Editar acción ${swarmAction.label}"]`).trigger('click')
+    await flushPromises()
+
+    const targetSelect = wrapper
+      .findAllComponents({ name: 'QSelect' })
+      .find((select) => select.props('label') === 'Objetivo')
+    expect(targetSelect?.props('modelValue')).toBe('selected_services')
+
+    const saveButtons = wrapper.findAll('button').filter((button) => button.text() === 'Guardar')
+    await saveButtons[1]?.trigger('click')
+    await flushPromises()
+
+    expect(api.updateAction).toHaveBeenCalledWith(
+      'authentik',
+      'restart',
+      expect.objectContaining({ config: { operation: 'restart', target: 'selected_services' } }),
     )
   })
 

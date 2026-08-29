@@ -14,6 +14,7 @@ class AutomationJob:
     action_config: dict[str, Any]
     service_container_selectors: dict[str, Any]
     portainer_environment_id: str | None
+    service_portainer_stack_name: str | None = None
     params: dict[str, Any] = field(default_factory=dict)
 
 

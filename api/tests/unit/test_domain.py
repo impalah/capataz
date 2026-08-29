@@ -163,6 +163,11 @@ async def test_status_service_refreshes_and_caches() -> None:
         ) -> list[dict[str, object]]:
             return [{"name": "open-webui", "running": True, "healthy": True}]
 
+        async def find_link_target(
+            self, environment_id: str, selectors: dict[str, object]
+        ) -> str | None:
+            return None
+
     class Prober:
         async def probe(self, config: dict[str, object]) -> bool:
             return True
@@ -191,6 +196,11 @@ async def test_status_service_surfaces_portainer_failure_without_hiding_health_p
             self, environment_id: str, selectors: dict[str, object]
         ) -> list[dict[str, object]]:
             raise ExternalServiceError("Portainer authentication was rejected")
+
+        async def find_link_target(
+            self, environment_id: str, selectors: dict[str, object]
+        ) -> str | None:
+            return None
 
     class Prober:
         async def probe(self, config: dict[str, object]) -> bool:
@@ -222,6 +232,11 @@ async def test_status_service_reports_unexpected_errors_without_leaking_internal
             self, environment_id: str, selectors: dict[str, object]
         ) -> list[dict[str, object]]:
             raise RuntimeError("boom: /internal/path leaked")
+
+        async def find_link_target(
+            self, environment_id: str, selectors: dict[str, object]
+        ) -> str | None:
+            return None
 
     item = service()
     item.portainer_environment_id = "1"
@@ -289,6 +304,36 @@ def test_resolve_action_rejects_extra_portainer_keys_and_distinguishes_errors() 
         resolve_action(service(), wrong_service, {})
 
 
+def test_resolve_action_accepts_selected_services_for_a_swarm_service() -> None:
+    swarm_service = Service(
+        id="authentik",
+        name="Authentik",
+        group_name="Security",
+        environment="homelab",
+        container_selectors={"services": [{"name": "authentik-server"}]},
+    )
+    action = ActionDefinition(
+        service_id="authentik",
+        key="restart",
+        label="Restart",
+        action_type=ActionType.PORTAINER,
+        risk_level=RiskLevel.OPERATE,
+        config={"operation": "restart", "target": "selected_services"},
+    )
+    assert resolve_action(swarm_service, action, {})["config"]["target"] == "selected_services"
+
+    mismatched = ActionDefinition(
+        service_id="authentik",
+        key="restart",
+        label="Restart",
+        action_type=ActionType.PORTAINER,
+        risk_level=RiskLevel.OPERATE,
+        config={"operation": "restart", "target": "selected_containers"},
+    )
+    with pytest.raises(ValidationError, match="declared selector kind"):
+        resolve_action(swarm_service, mismatched, {})
+
+
 def test_execution_transition_and_sanitization() -> None:
     execution = Execution(
         service_id="one",
@@ -323,6 +368,13 @@ def test_links_ssrf_and_secrets(tmp_path: Path) -> None:
         "https://loki.home.arpa",
     )
     assert "var-service=open+webui" in links["grafana"] and "portainer" in links
+    assert links["portainer"].endswith("/docker/containers")
+
+    swarm_item = service()
+    swarm_item.container_selectors = {"services": [{"name": "authentik-server"}]}
+    swarm_item.portainer_environment_id = "7"
+    swarm_links = resolve_links(swarm_item, "https://portainer.home.arpa", None, None)
+    assert swarm_links["portainer"].endswith("/docker/services")
     validate_health_url("https://openwebui.home.arpa/health", (".home.arpa",))
     with pytest.raises(ValidationError):
         validate_health_url("http://127.0.0.1/", (".home.arpa",))

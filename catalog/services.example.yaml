@@ -22,9 +22,10 @@ services:
       expected_status: 200
       timeout_seconds: 5
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: open-webui
+        var-service: open-webui
+        kiosk: "true"
     actions:
       - key: restart
         label: Reiniciar
@@ -66,9 +67,10 @@ services:
         - name: ollama
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: ollama-service
+        var-service: ollama-service
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -125,9 +127,10 @@ services:
           replicas: 1
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: postgres-main
+        var-service: postgres-main
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -184,9 +187,10 @@ services:
           replicas: 1
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: valkey
+        var-service: valkey
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -244,9 +248,10 @@ services:
         - name: pihole
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: pihole
+        var-service: pihole
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -305,9 +310,10 @@ services:
           replicas: 1
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: n8n-main
+        var-service: n8n-main
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -365,9 +371,10 @@ services:
         - name: vllm
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: vllm
+        var-service: vllm
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -425,9 +432,10 @@ services:
         - name: comfyui
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: comfyui
+        var-service: comfyui
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -486,9 +494,10 @@ services:
           replicas: 1
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: qdrant
+        var-service: qdrant
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -545,9 +554,10 @@ services:
         - name: whisper-service
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: whisper-service
+        var-service: whisper-service
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -606,9 +616,10 @@ services:
           replicas: 1
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: grafana
+        var-service: grafana
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -667,9 +678,10 @@ services:
           replicas: 1
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: prometheus
+        var-service: prometheus
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -728,9 +740,10 @@ services:
           replicas: 1
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: sonarqube
+        var-service: sonarqube
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -789,9 +802,10 @@ services:
           replicas: 1
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: bifrost
+        var-service: bifrost
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -849,9 +863,10 @@ services:
           replicas: 1
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: rsshub
+        var-service: rsshub
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -909,9 +924,10 @@ services:
           replicas: 1
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: markitdown-service
+        var-service: markitdown-service
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -969,9 +985,10 @@ services:
           replicas: 1
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: crawl4ai-scraper-service
+        var-service: crawl4ai-scraper-service
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -1030,9 +1047,10 @@ services:
           replicas: 1
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: n8n-aux
+        var-service: n8n-aux
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -1091,9 +1109,10 @@ services:
           replicas: 1
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: portainer
+        var-service: portainer
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -1152,9 +1171,10 @@ services:
           replicas: 1
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: vaultwarden
+        var-service: vaultwarden
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -1212,9 +1232,10 @@ services:
           replicas: 1
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: apikey-service
+        var-service: apikey-service
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -1272,9 +1293,10 @@ services:
           replicas: 1
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: registry
+        var-service: registry
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -1332,9 +1354,10 @@ services:
           replicas: 1
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: epub2pdf-service
+        var-service: epub2pdf-service
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -1392,9 +1415,10 @@ services:
           replicas: 1
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: pdf2chunks-service
+        var-service: pdf2chunks-service
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -1453,9 +1477,10 @@ services:
           replicas: 1
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: open-terminal-mcp
+        var-service: open-terminal-mcp
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -1514,9 +1539,10 @@ services:
           replicas: 1
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: infisical
+        var-service: infisical
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar
@@ -1575,9 +1601,10 @@ services:
           replicas: 1
           required: true
     grafana:
-      dashboard_uid: containers-overview
+      dashboard_uid: homelab-servicio-generico/servicio-generico
       variables:
-        service: authentik-server
+        var-service: authentik-server
+        kiosk: "true"
     actions:
       - key: start
         label: Iniciar

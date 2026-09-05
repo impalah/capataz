@@ -358,7 +358,10 @@ def test_execution_transition_and_sanitization() -> None:
 def test_links_ssrf_and_secrets(tmp_path: Path) -> None:
     item = service()
     item.service_url = "https://openwebui.home.arpa"
-    item.grafana_config = {"dashboard_uid": "containers", "variables": {"service": "open webui"}}
+    item.grafana_config = {
+        "dashboard_uid": "containers",
+        "variables": {"var-service": "open webui"},
+    }
     item.loki_config = {"query": '{service="open-webui"}'}
     item.portainer_environment_id = "1"
     links = resolve_links(
@@ -382,6 +385,44 @@ def test_links_ssrf_and_secrets(tmp_path: Path) -> None:
     assert FileSecretReader(tmp_path).read("postgres_password") == "value"
     with pytest.raises(ConfigurationError):
         FileSecretReader(tmp_path).read("missing")
+
+
+def test_grafana_link_accepts_slashed_uids_and_extra_query_params() -> None:
+    item = service()
+    item.grafana_config = {
+        "dashboard_uid": "homelab-generic/generic-service",
+        "variables": {"var-service": "bifrost", "kiosk": "tv"},
+    }
+    links = resolve_links(item, None, "https://grafana.home.arpa", None)
+    assert links["grafana"] == (
+        "https://grafana.home.arpa/d/homelab-generic/generic-service"
+        "?var-service=bifrost&kiosk=tv"
+    )
+
+
+def test_grafana_link_honors_a_per_service_base_url_override() -> None:
+    item = service()
+    item.grafana_config = {"dashboard_uid": "containers", "base_url": "https://grafana-alt.home.arpa"}
+    links = resolve_links(item, None, "https://grafana.home.arpa", None)
+    assert links["grafana"] == "https://grafana-alt.home.arpa/d/containers"
+
+
+def test_grafana_link_prefers_an_explicit_dashboard_url_over_uid_and_variables() -> None:
+    absolute = service()
+    absolute.grafana_config = {
+        "dashboard_uid": "ignored",
+        "variables": {"var-service": "ignored"},
+        "dashboard_url": "https://grafana.home.arpa/d/containers/x?kiosk=tv",
+    }
+    assert resolve_links(absolute, None, "https://grafana.home.arpa", None)["grafana"] == (
+        "https://grafana.home.arpa/d/containers/x?kiosk=tv"
+    )
+
+    relative = service()
+    relative.grafana_config = {"dashboard_url": "d/containers/x?kiosk=tv"}
+    assert resolve_links(relative, None, "https://grafana.home.arpa", None)["grafana"] == (
+        "https://grafana.home.arpa/d/containers/x?kiosk=tv"
+    )
 
 
 def test_file_secret_reader_warns_on_overly_permissive_mode(

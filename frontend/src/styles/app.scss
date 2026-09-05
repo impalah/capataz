@@ -147,13 +147,18 @@ textarea {
   margin: 0 auto;
   padding: clamp(var(--space-6), 4vw, var(--space-12));
 }
-.page-header,
-.detail-header {
+.page-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: var(--space-6);
   margin-bottom: var(--space-8);
+}
+.detail-header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-6);
 }
 .eyebrow {
   margin: 0 0 var(--space-2);
@@ -183,6 +188,14 @@ textarea {
   gap: var(--space-3);
   margin-bottom: var(--space-8);
 }
+// Servicios (DashboardPage): half the usual top/bottom whitespace around the page title — the
+// grid of service cards is the point of the page, the header shouldn't push it down this far.
+.page.dashboard-page {
+  padding-top: clamp(var(--space-3), 2vw, var(--space-6));
+}
+.dashboard-header {
+  margin-bottom: var(--space-4);
+}
 .services-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -205,19 +218,30 @@ textarea {
   inset: 0;
   z-index: 1;
 }
-.card-top {
+.card-content {
   position: relative;
   z-index: 2;
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  color: var(--color-accent-text);
+  flex-direction: column;
+  gap: var(--space-2);
+  // Purely informational now (icon/status/timestamp have no click behavior of their own) — let
+  // clicks fall through to the full-card .card-link underneath instead of dead-ending here.
+  pointer-events: none;
+}
+// Row 1: only the status badge, right-aligned.
+.card-row-status {
+  display: flex;
+  justify-content: flex-end;
+}
+// Row 2: icon + title.
+.card-row-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 .card-icon {
   display: inline-flex;
-}
-.card-icon--clickable {
-  cursor: pointer;
+  color: var(--color-accent-text);
 }
 .card-status {
   display: flex;
@@ -230,18 +254,38 @@ textarea {
   align-items: center;
   gap: var(--space-1);
 }
-.card-status-trigger--clickable {
-  cursor: pointer;
+.card-error-icon {
+  // Re-enables hover for its own tooltip despite .card-content's pointer-events: none above.
+  pointer-events: auto;
 }
 .card-updated {
   font-size: 10px;
   color: var(--color-text-muted);
 }
 .service-card h2 {
-  margin: var(--space-2) 0 var(--space-1);
+  margin: 0;
   font-size: var(--text-lg);
   font-family: var(--font-display);
   letter-spacing: -0.02em;
+}
+// Health at a glance, beyond the small badge: an unknown status mutes the card, a down status
+// flags it red — both as low-opacity tints over the theme's surface color so --color-text (set
+// per body.body--light/dark above) stays readable on top without its own override.
+.service-card--unknown {
+  background: rgba(120, 130, 132, 0.22);
+  border-color: rgba(120, 130, 132, 0.4);
+}
+body.body--light .service-card--unknown {
+  background: rgba(85, 103, 106, 0.12);
+  border-color: rgba(85, 103, 106, 0.35);
+}
+.service-card--down {
+  background: rgba(150, 40, 40, 0.25);
+  border-color: rgba(225, 128, 128, 0.5);
+}
+body.body--light .service-card--down {
+  background: rgba(211, 47, 47, 0.12);
+  border-color: rgba(211, 47, 47, 0.4);
 }
 .panel h2 {
   margin: 0 0 var(--space-2);
@@ -249,27 +293,44 @@ textarea {
   font-family: var(--font-display);
   letter-spacing: -0.02em;
 }
-.service-card p {
-  margin: 0;
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
 .panel-intro {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
 }
-.meta {
-  display: flex;
+// Actions/observability panels: compact icon+title tiles instead of a q-list, so at least 4 (up
+// to 8+ on wide screens) fit per row before wrapping to a new one.
+.tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: var(--space-2);
-  margin-top: var(--space-2);
 }
-.service-card .card-stack {
-  margin: var(--space-2) 0 0;
-  color: var(--color-text-muted);
-  font-size: var(--text-xs);
+.tile-button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.tile-button span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.tile-button:hover:not(:disabled) {
+  border-color: var(--color-accent-text);
+  color: var(--color-accent-text);
+}
+.tile-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .detail-list {
   display: grid;
@@ -306,15 +367,6 @@ textarea {
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   font-size: var(--text-xs);
   color: var(--color-text);
-}
-.card-actions {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  margin-top: var(--space-4);
 }
 .status-badge {
   display: inline-flex;
@@ -365,12 +417,23 @@ body.body--light .error-banner {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-4);
 }
+// Actions/observability panels span the full width instead of sitting in one of the two columns
+// (container status and latest executions keep the two-column layout below them).
+.detail-grid .panel-full {
+  grid-column: 1 / -1;
+}
 .panel {
   padding: var(--space-5);
 }
 .detail-header {
+  margin-bottom: var(--space-8);
   padding-bottom: var(--space-5);
   border-bottom: 1px solid var(--color-border);
+}
+// Overrides the 65ch cap from ".detail-header p:not(.eyebrow)" above — the description is meant
+// to use the header's full width now, not just the space left by the status controls.
+.detail-header p.detail-description {
+  max-width: none;
 }
 .status-actions {
   display: flex;
@@ -411,7 +474,7 @@ code {
 }
 @media (max-width: 700px) {
   .page-header,
-  .detail-header {
+  .detail-header-top {
     flex-direction: column;
   }
   .filters,

@@ -82,6 +82,8 @@ const healthUrl = ref('')
 const healthExpectedStatus = ref(200)
 const healthTimeoutSeconds = ref(5)
 const grafanaDashboardUid = ref('')
+const grafanaBaseUrl = ref('')
+const grafanaDashboardUrl = ref('')
 const grafanaVariableRows = ref<VariableRow[]>([])
 const lokiQuery = ref('')
 // Refleja en los refs "extra" del diálogo lo que ya tenga el servicio (edición) o los limpia
@@ -108,6 +110,8 @@ const resetServiceFormExtras = (service?: Service) => {
   healthExpectedStatus.value = service?.health_config?.expected_status ?? 200
   healthTimeoutSeconds.value = service?.health_config?.timeout_seconds ?? 5
   grafanaDashboardUid.value = service?.grafana_config?.dashboard_uid ?? ''
+  grafanaBaseUrl.value = service?.grafana_config?.base_url ?? ''
+  grafanaDashboardUrl.value = service?.grafana_config?.dashboard_url ?? ''
   const variables = service?.grafana_config?.variables ?? {}
   grafanaVariableRows.value = Object.entries(variables).map(([key, value]) => ({ key, value }))
   lokiQuery.value = service?.loki_config?.query ?? ''
@@ -294,9 +298,14 @@ const saveService = async () => {
         }
       : {},
     grafana_config:
-      grafanaDashboardUid.value.trim() || validVariables.length
+      grafanaDashboardUid.value.trim() ||
+      grafanaBaseUrl.value.trim() ||
+      grafanaDashboardUrl.value.trim() ||
+      validVariables.length
         ? {
             dashboard_uid: grafanaDashboardUid.value || undefined,
+            base_url: grafanaBaseUrl.value || undefined,
+            dashboard_url: grafanaDashboardUrl.value || undefined,
             variables: Object.fromEntries(validVariables.map((row) => [row.key, row.value])),
           }
         : {},
@@ -768,9 +777,23 @@ const removeAction = async () => {
               <q-separator />
               <div class="text-subtitle2">{{ t('pages.catalog.grafanaSectionTitle') }}</div>
               <q-input
+                v-model="grafanaBaseUrl"
+                outlined
+                :label="t('pages.catalog.grafanaBaseUrlLabel')"
+                :hint="t('pages.catalog.grafanaBaseUrlHint')"
+              />
+              <q-input
+                v-model="grafanaDashboardUrl"
+                outlined
+                :label="t('pages.catalog.grafanaDashboardUrlLabel')"
+                :hint="t('pages.catalog.grafanaDashboardUrlHint')"
+              />
+              <q-input
                 v-model="grafanaDashboardUid"
                 outlined
+                :disable="!!grafanaDashboardUrl.trim()"
                 :label="t('pages.catalog.grafanaDashboardUidLabel')"
+                :hint="t('pages.catalog.grafanaDashboardUidHint')"
               />
               <div class="text-caption">{{ t('pages.catalog.grafanaVariablesTitle') }}</div>
               <div
@@ -783,13 +806,16 @@ const removeAction = async () => {
                   outlined
                   dense
                   class="col"
+                  :disable="!!grafanaDashboardUrl.trim()"
                   :label="t('pages.catalog.variableKeyLabel')"
+                  :hint="t('pages.catalog.variableKeyHint')"
                 />
                 <q-input
                   v-model="row.value"
                   outlined
                   dense
                   class="col"
+                  :disable="!!grafanaDashboardUrl.trim()"
                   :label="t('pages.catalog.variableValueLabel')"
                 />
                 <q-btn
@@ -808,6 +834,7 @@ const removeAction = async () => {
                 no-caps
                 icon="add"
                 color="primary"
+                :disable="!!grafanaDashboardUrl.trim()"
                 :label="t('pages.catalog.addVariable')"
                 @click="addVariableRow"
               />

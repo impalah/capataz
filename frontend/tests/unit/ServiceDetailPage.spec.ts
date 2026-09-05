@@ -125,26 +125,39 @@ describe('ServiceDetailPage', () => {
     expect(wrapper.text()).toContain('restart')
   })
 
-  it('executes a non-critical action directly and navigates to its execution page', async () => {
+  it('shows the Portainer stack name in the header when the service declares one', async () => {
+    vi.mocked(api.service).mockResolvedValue({ ...service, portainer_stack_name: 'ai-platform' })
+    const { wrapper } = await mountDetail()
+    expect(wrapper.text()).toContain('Stack: ai-platform')
+  })
+
+  it('omits the stack line when the service has no declared Portainer stack', async () => {
+    const { wrapper } = await mountDetail()
+    expect(wrapper.text()).not.toContain('Stack:')
+  })
+
+  it('executes a non-critical action directly by clicking its tile and navigates to its execution page', async () => {
     vi.mocked(api.execute).mockResolvedValue({ ...execution, id: 'e-2' })
     const { wrapper, router } = await mountDetail()
 
-    const executeBtn = wrapper.findAll('button').find((button) => button.text() === 'Ejecutar')
-    await executeBtn?.trigger('click')
+    const actionTile = wrapper.findAll('button.tile-button').find((button) => button.text().includes('Reiniciar'))
+    await actionTile?.trigger('click')
     await flushPromises()
 
     expect(api.execute).toHaveBeenCalledWith('open-webui', 'restart', {})
-    expect(router.currentRoute.value.fullPath).toBe('/executions/e-2')
+    // Carries where we came from so the execution page's back button returns here, not to the
+    // executions list.
+    expect(router.currentRoute.value.fullPath).toBe('/executions/e-2?back=/services/open-webui')
   })
 
-  it('disables the execute button for a viewer without operate permission', async () => {
+  it('disables the action tile for a viewer without operate permission', async () => {
     const { wrapper } = await mountDetail()
     useAuthStore().selectDevRole('capataz-viewer')
     await flushPromises()
 
-    const executeBtn = wrapper.findAll('button').find((button) => button.text() === 'Ejecutar')
+    const actionTile = wrapper.findAll('button.tile-button').find((button) => button.text().includes('Reiniciar'))
 
-    expect(executeBtn?.attributes('disabled')).toBeDefined()
+    expect(actionTile?.attributes('disabled')).toBeDefined()
   })
 
   it('shows the error banner when the service fails to load', async () => {

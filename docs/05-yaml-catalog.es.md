@@ -87,18 +87,21 @@ Ambos son objetos **completamente libres** (`dict[str, Any]`, sin validación de
 
 ```yaml
 grafana:
-  dashboard_uid: containers-overview
+  dashboard_uid: homelab-generico/servicio-generico
   variables:
-    service: ollama-service
+    var-service: ollama-service
+    kiosk: tv
 loki:
   query: '{compose_service="ollama"}'
 ```
 
-- `grafana.dashboard_uid`: UID del panel en tu Grafana (visible en la URL del dashboard: `.../d/<uid>/...`). Se concatena literalmente en `{grafana_url}/d/{dashboard_uid}`.
-- `grafana.variables`: pares clave/valor que se traducen en parámetros `var-<clave>=<valor>` de la URL — deben coincidir con los nombres de variable de plantilla definidos en ese dashboard concreto de Grafana, si no, Grafana simplemente los ignora.
+- `grafana.dashboard_uid`: UID del panel en tu Grafana (visible en la URL del dashboard: `.../d/<uid>/...`). Se concatena literalmente en `{grafana.base_url o grafana_url}/d/{dashboard_uid}`; el carácter `/` no se codifica, así que un UID cualificado por carpeta como `homelab-generico/servicio-generico` funciona tal cual.
+- `grafana.variables`: pares clave/valor que se usan tal cual como parámetros de la URL — no se añade ningún prefijo automáticamente, así que hay que indicar el nombre **completo** del parámetro que espera Grafana, p. ej. `var-service` para una variable de plantilla llamada `service`, o un modificador que no sea variable, como `kiosk: tv`. Un parámetro que no coincida con ninguna variable de plantilla definida en ese dashboard, Grafana simplemente lo ignora.
+- `grafana.base_url`: opcional; sobrescribe la `CAPATAZ_GRAFANA_URL` del sistema solo para este servicio, para un servicio cuyos dashboards viven en otra instancia de Grafana.
+- `grafana.dashboard_url`: opcional; la ruta completa del dashboard (o una URL `http(s)://` completa) a usar como enlace de Grafana, **ignorando por completo `dashboard_uid` y `variables`** si está definida. Un valor relativo (que no empiece por `http://`/`https://`) se añade a `grafana.base_url` o a la `CAPATAZ_GRAFANA_URL` del sistema.
 - `loki.query`: expresión LogQL en bruto que se coloca como parámetro `left` de `{loki_url}/explore?...`. Sin escapado más allá del `urlencode` estándar.
 
-`CAPATAZ_GRAFANA_URL`/`CAPATAZ_LOKI_URL`/`CAPATAZ_PORTAINER_URL` (variables de entorno, ver `core/settings.py`) deben estar configuradas para que estos enlaces se generen; si falta la URL base correspondiente, el enlace simplemente no aparece.
+`CAPATAZ_GRAFANA_URL`/`CAPATAZ_LOKI_URL`/`CAPATAZ_PORTAINER_URL` (variables de entorno, ver `core/settings.py`) deben estar configuradas para que estos enlaces se generen, salvo que `grafana.base_url` (o un `grafana.dashboard_url` absoluto) aporte la suya propia; si ninguna de estas fuentes da una URL base, el enlace simplemente no aparece.
 
 ## `actions`
 

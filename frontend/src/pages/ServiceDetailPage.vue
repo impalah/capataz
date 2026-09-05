@@ -59,27 +59,69 @@ const { pending, confirmOpen, requestAction, confirmPending } = useActionExecuti
       >
       <div v-else-if="services.selected" class="detail">
         <header class="detail-header">
-          <div>
-            <p class="eyebrow">{{ services.selected.group_name }} · {{ services.selected.environment }}</p>
-            <h1><q-icon :name="services.selected.icon ?? 'dns'" /> {{ services.selected.name }}</h1>
-            <p>{{ services.selected.description }}</p>
+          <div class="detail-header-top">
+            <div>
+              <p class="eyebrow">
+                {{ services.selected.group_name }} · {{ services.selected.environment
+                }}<template v-if="services.selected.portainer_stack_name">
+                  · {{ t('pages.serviceDetail.stackLabel', { stack: services.selected.portainer_stack_name }) }}
+                </template>
+              </p>
+              <h1><q-icon :name="services.selected.icon ?? 'dns'" /> {{ services.selected.name }}</h1>
+            </div>
+            <div class="row items-center q-gutter-x-sm">
+              <ServiceStatusBadge :status="services.statuses[props.id]?.status" /><AutoRefreshSelect
+                v-model="refreshIntervalMs"
+                :disable="!auth.isOperator"
+              /><q-btn
+                flat
+                round
+                icon="refresh"
+                :loading="refreshing"
+                :aria-label="t('pages.serviceDetail.updateStatus')"
+                @click="() => refreshStatus()"
+                ><q-tooltip>{{ t('pages.serviceDetail.updateStatus') }}</q-tooltip></q-btn
+              >
+            </div>
           </div>
-          <div class="row items-center q-gutter-x-sm">
-            <ServiceStatusBadge :status="services.statuses[props.id]?.status" /><AutoRefreshSelect
-              v-model="refreshIntervalMs"
-              :disable="!auth.isOperator"
-            /><q-btn
-              flat
-              round
-              icon="refresh"
-              :loading="refreshing"
-              :aria-label="t('pages.serviceDetail.updateStatus')"
-              @click="() => refreshStatus()"
-              ><q-tooltip>{{ t('pages.serviceDetail.updateStatus') }}</q-tooltip></q-btn
-            >
-          </div>
+          <p class="detail-description">{{ services.selected.description }}</p>
         </header>
         <section class="detail-grid">
+          <article class="panel panel-full">
+            <h2>{{ t('pages.serviceDetail.allowedActions') }}</h2>
+            <div class="tile-grid"
+              ><button
+                v-for="action in services.actions"
+                :key="action.id"
+                type="button"
+                class="tile-button"
+                :disabled="!auth.canExecute(action.risk_level) || !action.enabled"
+                @click="requestAction(action)"
+                ><q-icon :name="action.icon ?? 'play_arrow'" size="22px" /><span>{{ action.label }}</span></button
+              ></div
+            >
+          </article>
+          <article class="panel panel-full">
+            <h2>{{ t('pages.serviceDetail.observability') }}</h2>
+            <div class="tile-grid"
+              ><a
+                v-for="(link, label) in services.links"
+                :key="label"
+                :href="link"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="tile-button"
+                ><q-icon name="open_in_new" size="22px" /><span>{{ label }}</span></a
+              ><a
+                v-if="services.selected.service_url"
+                :href="services.selected.service_url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="tile-button"
+                ><q-icon name="language" size="22px" /><span>{{ t('pages.serviceDetail.openService') }}</span></a
+              ></div
+            >
+          </article>
           <article class="panel">
             <h2>{{ t('pages.serviceDetail.containerStatus') }}</h2>
             <q-banner v-if="services.statuses[props.id]?.error" class="error-banner" dense rounded
@@ -115,57 +157,12 @@ const { pending, confirmOpen, requestAction, confirmPending } = useActionExecuti
             >
           </article>
           <article class="panel">
-            <h2>{{ t('pages.serviceDetail.allowedActions') }}</h2>
-            <p class="panel-intro">{{ t('pages.serviceDetail.authNote') }}</p>
-            <q-list separator
-              ><q-item v-for="action in services.actions" :key="action.id"
-                ><q-item-section avatar><q-icon :name="action.icon ?? 'play_arrow'" /></q-item-section
-                ><q-item-section
-                  ><q-item-label>{{ action.label }}</q-item-label
-                  ><q-item-label caption
-                    >{{ t(`enums.actionType.${action.action_type}`) }}
-                    {{ t('pages.serviceDetail.riskPrefix') }}
-                    {{ t(`enums.riskLevel.${action.risk_level}`) }}</q-item-label
-                  ></q-item-section
-                ><q-item-section side
-                  ><q-btn
-                    color="primary"
-                    no-caps
-                    :label="t('pages.serviceDetail.execute')"
-                    :disable="!auth.canExecute(action.risk_level) || !action.enabled"
-                    @click="requestAction(action)" /></q-item-section></q-item
-            ></q-list>
-          </article>
-          <article class="panel">
-            <h2>{{ t('pages.serviceDetail.observability') }}</h2>
-            <q-list
-              ><q-item
-                v-for="(link, label) in services.links"
-                :key="label"
-                :href="link"
-                target="_blank"
-                rel="noopener noreferrer"
-                clickable
-                ><q-item-section avatar><q-icon name="open_in_new" /></q-item-section
-                ><q-item-section>{{ label }}</q-item-section></q-item
-              ><q-item
-                v-if="services.selected.service_url"
-                :href="services.selected.service_url"
-                target="_blank"
-                rel="noopener noreferrer"
-                clickable
-                ><q-item-section avatar><q-icon name="language" /></q-item-section
-                ><q-item-section>{{ t('pages.serviceDetail.openService') }}</q-item-section></q-item
-              ></q-list
-            >
-          </article>
-          <article class="panel">
             <h2>{{ t('pages.serviceDetail.latestExecutions') }}</h2>
             <q-list separator
               ><q-item
                 v-for="execution in executions.items.slice(0, 4)"
                 :key="execution.id"
-                :to="`/executions/${execution.id}`"
+                :to="{ path: `/executions/${execution.id}`, query: { back: `/services/${props.id}` } }"
                 clickable
                 ><q-item-section
                   ><q-item-label>{{

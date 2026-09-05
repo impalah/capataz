@@ -49,6 +49,8 @@ export interface HealthConfig {
 export interface GrafanaConfig {
   dashboard_uid?: string
   variables?: Record<string, string>
+  base_url?: string
+  dashboard_url?: string
 }
 export interface LokiConfig {
   query?: string

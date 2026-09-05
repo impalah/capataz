@@ -4,6 +4,10 @@ import { ApiError } from '@/api/client'
 import { i18n } from '@/i18n'
 import type { ActionDefinition, Service, ServiceStatusResult } from '@/api/types'
 
+// Mirrors the localStorage-backed drawer/theme prefs in AppLayout.vue: a plain UI preference the
+// user expects to find as they left it, not domain state worth a server round-trip.
+const FILTERS_EXPANDED_STORAGE_KEY = 'capataz.dashboardFiltersExpanded'
+
 export const useServicesStore = defineStore('services', {
   state: () => ({
     items: [] as Service[],
@@ -24,8 +28,14 @@ export const useServicesStore = defineStore('services', {
     // me" and incorrectly skip clearing `loading`.
     detailSeq: {} as Record<string, number>,
     statusSeq: {} as Record<string, number>,
+    // Collapsed by default; expanded only once the user has explicitly opened it before.
+    filtersExpanded: localStorage.getItem(FILTERS_EXPANDED_STORAGE_KEY) === 'open',
   }),
   actions: {
+    setFiltersExpanded(value: boolean): void {
+      this.filtersExpanded = value
+      localStorage.setItem(FILTERS_EXPANDED_STORAGE_KEY, value ? 'open' : 'closed')
+    },
     async fetchStatus(id: string): Promise<void> {
       const seq = (this.statusSeq[id] = (this.statusSeq[id] ?? 0) + 1)
       try {

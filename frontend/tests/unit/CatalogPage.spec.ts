@@ -529,6 +529,57 @@ describe('CatalogPage', () => {
     )
   })
 
+  it('edits a Grafana base URL and dashboard URL, and disables the UID/variables while a dashboard URL is set', async () => {
+    const overriddenGrafanaService: Service = {
+      ...richService,
+      grafana_config: {
+        dashboard_uid: 'dash-1',
+        variables: { 'var-service': 'open-webui' },
+        base_url: 'https://grafana-alt.home.arpa',
+        dashboard_url: 'https://grafana-alt.home.arpa/d/dash-1/open-webui?kiosk=tv',
+      },
+    }
+    vi.mocked(api.services).mockResolvedValue({
+      items: [overriddenGrafanaService],
+      total: 1,
+      offset: 0,
+      limit: 50,
+    })
+    vi.mocked(api.updateService).mockResolvedValue(overriddenGrafanaService)
+    const { wrapper } = await mountPage()
+
+    await wrapper.get(`[aria-label="Editar ${overriddenGrafanaService.name}"]`).trigger('click')
+    await flushPromises()
+
+    const inputs = wrapper.findAllComponents({ name: 'QInput' })
+    const baseUrlInput = inputs.find(
+      (input) => input.props('label') === 'URL base de Grafana (opcional)',
+    )
+    const dashboardUrlInput = inputs.find(
+      (input) => input.props('label') === 'URL completa del dashboard (opcional)',
+    )
+    const dashboardUidInput = inputs.find((input) => input.props('label') === 'UID del dashboard')
+    expect(baseUrlInput?.props('modelValue')).toBe('https://grafana-alt.home.arpa')
+    expect(dashboardUrlInput?.props('modelValue')).toBe(
+      'https://grafana-alt.home.arpa/d/dash-1/open-webui?kiosk=tv',
+    )
+    expect(dashboardUidInput?.props('disable')).toBe(true)
+
+    const saveBtn = wrapper.findAll('button').find((button) => button.text() === 'Guardar')
+    await saveBtn?.trigger('click')
+    await flushPromises()
+
+    expect(api.updateService).toHaveBeenCalledWith(
+      'open-webui',
+      expect.objectContaining({
+        grafana_config: expect.objectContaining({
+          base_url: 'https://grafana-alt.home.arpa',
+          dashboard_url: 'https://grafana-alt.home.arpa/d/dash-1/open-webui?kiosk=tv',
+        }),
+      }),
+    )
+  })
+
   it('round-trips a Docker Swarm service (services selector) without collapsing it into containers', async () => {
     vi.mocked(api.services).mockResolvedValue({ items: [swarmService], total: 1, offset: 0, limit: 50 })
     vi.mocked(api.updateService).mockResolvedValue(swarmService)

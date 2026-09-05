@@ -87,18 +87,21 @@ Both are **completely free-form** objects (`dict[str, Any]`, with no shape or al
 
 ```yaml
 grafana:
-  dashboard_uid: containers-overview
+  dashboard_uid: homelab-generic/generic-service
   variables:
-    service: ollama-service
+    var-service: ollama-service
+    kiosk: tv
 loki:
   query: '{compose_service="ollama"}'
 ```
 
-- `grafana.dashboard_uid`: the panel's UID in your Grafana (visible in the dashboard URL: `.../d/<uid>/...`). It's concatenated literally into `{grafana_url}/d/{dashboard_uid}`.
-- `grafana.variables`: key/value pairs translated into `var-<key>=<value>` URL parameters — they must match the template variable names defined in that specific Grafana dashboard, otherwise Grafana simply ignores them.
+- `grafana.dashboard_uid`: the panel's UID in your Grafana (visible in the dashboard URL: `.../d/<uid>/...`). It's concatenated literally into `{grafana.base_url or grafana_url}/d/{dashboard_uid}`; `/` is left unescaped, so a folder-qualified UID like `homelab-generic/generic-service` works as-is.
+- `grafana.variables`: key/value pairs used verbatim as URL query parameters — nothing is auto-prefixed, so give the **full** parameter name Grafana expects, e.g. `var-service` for a template variable named `service`, or a non-variable modifier like `kiosk: tv`. A parameter that doesn't match a template variable defined in that dashboard is simply ignored by Grafana.
+- `grafana.base_url`: optional; overrides the system-wide `CAPATAZ_GRAFANA_URL` for this service only, for a service whose dashboards live on a different Grafana instance.
+- `grafana.dashboard_url`: optional; the complete dashboard path (or a full `http(s)://` URL) to use as the Grafana link, **ignoring `dashboard_uid` and `variables` entirely** when set. A relative value (not starting with `http://`/`https://`) is appended to `grafana.base_url` or the system `CAPATAZ_GRAFANA_URL`.
 - `loki.query`: a raw LogQL expression placed as the `left` parameter of `{loki_url}/explore?...`. No escaping beyond standard `urlencode`.
 
-`CAPATAZ_GRAFANA_URL`/`CAPATAZ_LOKI_URL`/`CAPATAZ_PORTAINER_URL` (environment variables, see `core/settings.py`) must be configured for these links to be generated; if the corresponding base URL is missing, the link simply doesn't appear.
+`CAPATAZ_GRAFANA_URL`/`CAPATAZ_LOKI_URL`/`CAPATAZ_PORTAINER_URL` (environment variables, see `core/settings.py`) must be configured for these links to be generated unless `grafana.base_url` (or an absolute `grafana.dashboard_url`) supplies its own; if no base URL is available from any of these sources, the link simply doesn't appear.
 
 ## `actions`
 

@@ -33,16 +33,17 @@ const events: ExecutionEvent[] = [
   },
 ]
 
-const mountPage = async (id = 'e-1') => {
+const mountPage = async (id = 'e-1', query: Record<string, string> = {}) => {
   setActivePinia(createPinia())
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/executions', component: { template: '<div />' } },
       { path: '/executions/:id', component: ExecutionPage, props: true },
+      { path: '/services/:id', component: { template: '<div />' } },
     ],
   })
-  await router.push(`/executions/${id}`)
+  await router.push({ path: `/executions/${id}`, query })
   await router.isReady()
   const wrapper = mount(ExecutionPage, { props: { id }, global: { plugins: [router] } })
   await flushPromises()
@@ -110,6 +111,27 @@ describe('ExecutionPage', () => {
 
     expect(wrapper.text()).toContain('Ejecución e-2')
     expect(api.execution).toHaveBeenCalledWith('e-2')
+  })
+
+  it('defaults the back button to the executions list when there is no back query param', async () => {
+    const { wrapper } = await mountPage()
+    const back = wrapper.get('.back-link')
+    expect(back.text()).toContain('Ejecuciones')
+    expect(back.attributes('href')).toBe('/executions')
+  })
+
+  it('sends the back button to the originating service when it was opened from there', async () => {
+    const { wrapper } = await mountPage('e-1', { back: '/services/open-webui' })
+    const back = wrapper.get('.back-link')
+    expect(back.text()).toContain('Servicio')
+    expect(back.attributes('href')).toBe('/services/open-webui')
+  })
+
+  it('ignores a back query param that is not a /services/... path (avoids an open redirect)', async () => {
+    const { wrapper } = await mountPage('e-1', { back: 'https://evil.example/' })
+    const back = wrapper.get('.back-link')
+    expect(back.text()).toContain('Ejecuciones')
+    expect(back.attributes('href')).toBe('/executions')
   })
 
   it('manual refresh re-polls detail and events', async () => {

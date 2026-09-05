@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import AppLayout from '@/layouts/AppLayout.vue'
 import ExecutionStatusBadge from '@/components/ExecutionStatusBadge.vue'
 import AutoRefreshSelect from '@/components/AutoRefreshSelect.vue'
@@ -10,7 +11,18 @@ import { notifyApiError } from '@/api/notify'
 import type { ExecutionEvent, ExecutionStatus } from '@/api/types'
 const props = defineProps<{ id: string }>()
 const executions = useExecutionsStore()
+const route = useRoute()
 const { t, locale } = useI18n()
+// Where "back" goes depends on where the user came from: a service detail page (opened via an
+// action there) or the executions list — carried in the URL so it survives a reload/direct link.
+// Only /services/... is accepted as a back target to avoid an open redirect via a crafted query.
+const backTarget = computed(() => {
+  const back = route.query.back
+  return typeof back === 'string' && back.startsWith('/services/') ? back : '/executions'
+})
+const backLabel = computed(() =>
+  backTarget.value === '/executions' ? t('pages.execution.back') : t('pages.execution.backToService'),
+)
 const eventLogs = (event: ExecutionEvent): Record<string, string> | undefined => {
   const logs = event.data?.logs
   return logs && typeof logs === 'object' ? (logs as Record<string, string>) : undefined
@@ -60,7 +72,7 @@ watch(
 <template>
   <AppLayout
     ><q-page class="page"
-      ><q-btn flat icon="arrow_back" :label="t('pages.execution.back')" to="/executions" class="back-link" /><q-banner
+      ><q-btn flat icon="arrow_back" :label="backLabel" :to="backTarget" class="back-link" /><q-banner
         v-if="executions.error"
         class="error-banner"
         rounded

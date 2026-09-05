@@ -50,14 +50,11 @@ onMounted(async () => {
 </script>
 <template>
   <AppLayout
-    ><q-page class="page"
-      ><header class="page-header">
+    ><q-page class="page dashboard-page"
+      ><header class="page-header dashboard-header">
         <div>
           <p class="eyebrow">{{ t('pages.dashboard.eyebrow') }}</p>
           <h1>{{ t('pages.dashboard.title') }}</h1>
-          <p>
-            {{ t('pages.dashboard.description') }}
-          </p>
         </div>
         <div class="row items-center q-gutter-sm">
           <AutoRefreshSelect v-model="refreshIntervalMs" :disable="!auth.isOperator" /><q-btn
@@ -68,33 +65,47 @@ onMounted(async () => {
             :loading="services.loading"
             :disable="!auth.isOperator"
             @click="() => refreshAll()"
-          />
+          /><q-btn
+            flat
+            round
+            icon="tune"
+            :color="services.filtersExpanded ? 'primary' : undefined"
+            :aria-label="t('pages.dashboard.toggleFilters')"
+            @click="services.setFiltersExpanded(!services.filtersExpanded)"
+            ><q-tooltip>{{ t('pages.dashboard.toggleFilters') }}</q-tooltip></q-btn
+          >
         </div>
       </header>
-      <section class="filters" :aria-label="t('pages.dashboard.filtersAria')">
-        <q-input
-          v-model="search"
-          outlined
-          dense
-          clearable
-          :label="t('pages.dashboard.searchLabel')"
-          class="search"
-          ><template #prepend><q-icon name="search" /></template></q-input
-        ><q-select
-          v-model="group"
-          :options="groups"
-          outlined
-          dense
-          clearable
-          :label="t('pages.dashboard.groupLabel')" /><q-select
-          v-model="environment"
-          :options="environments"
-          outlined
-          dense
-          clearable
-          :label="t('pages.dashboard.environmentLabel')"
-        />
-      </section>
+      <q-slide-transition>
+        <section
+          v-show="services.filtersExpanded"
+          class="filters"
+          :aria-label="t('pages.dashboard.filtersAria')"
+        >
+          <q-input
+            v-model="search"
+            outlined
+            dense
+            clearable
+            :label="t('pages.dashboard.searchLabel')"
+            class="search"
+            ><template #prepend><q-icon name="search" /></template></q-input
+          ><q-select
+            v-model="group"
+            :options="groups"
+            outlined
+            dense
+            clearable
+            :label="t('pages.dashboard.groupLabel')" /><q-select
+            v-model="environment"
+            :options="environments"
+            outlined
+            dense
+            clearable
+            :label="t('pages.dashboard.environmentLabel')"
+          />
+        </section>
+      </q-slide-transition>
       <q-banner v-if="services.error" class="error-banner" rounded inline-actions
         ><template #avatar><q-icon name="error" /></template>{{ services.error
         }}<template #action
@@ -112,8 +123,6 @@ onMounted(async () => {
           :key="service.id"
           :service="service"
           :status="services.statuses[service.id]"
-          :actions="services.actionsByService[service.id]"
-          :can-refresh="auth.isOperator"
         />
       </section>
       <section v-else class="empty-state">

@@ -43,8 +43,14 @@ const mountDashboard = async () => {
   return { wrapper, router }
 }
 
+const expandFilters = async (wrapper: Awaited<ReturnType<typeof mountDashboard>>['wrapper']) => {
+  await wrapper.get('[aria-label="Mostrar/ocultar filtros"]').trigger('click')
+  await flushPromises()
+}
+
 describe('DashboardPage', () => {
   beforeEach(() => {
+    localStorage.clear()
     vi.mocked(api.services).mockResolvedValue({
       items: [service1, service2],
       total: 2,
@@ -77,6 +83,7 @@ describe('DashboardPage', () => {
 
   it('filters services by search text', async () => {
     const { wrapper } = await mountDashboard()
+    await expandFilters(wrapper)
     await wrapper.get('.search input').setValue('Immich')
     expect(wrapper.text()).toContain('Immich')
     expect(wrapper.text()).not.toContain('Open WebUI')
@@ -84,12 +91,26 @@ describe('DashboardPage', () => {
 
   it('shows an empty state when filters match nothing, and clears them on click', async () => {
     const { wrapper } = await mountDashboard()
+    await expandFilters(wrapper)
     await wrapper.get('.search input').setValue('nonexistent-service')
     expect(wrapper.text()).toContain('No hay servicios con esos filtros')
 
     await wrapper.get('.empty-state button').trigger('click')
 
     expect(wrapper.text()).toContain('Open WebUI')
+  })
+
+  it('keeps the filters panel collapsed by default, expands it via the settings toggle, and remembers that choice', async () => {
+    const { wrapper } = await mountDashboard()
+    const filtersSection = wrapper.get('.filters').element as HTMLElement
+    expect(filtersSection.style.display).toBe('none')
+
+    await expandFilters(wrapper)
+    expect(filtersSection.style.display).not.toBe('none')
+    expect(localStorage.getItem('capataz.dashboardFiltersExpanded')).toBe('open')
+
+    const { wrapper: remounted } = await mountDashboard()
+    expect((remounted.get('.filters').element as HTMLElement).style.display).not.toBe('none')
   })
 
   it('disables bulk-refresh affordances for a viewer', async () => {

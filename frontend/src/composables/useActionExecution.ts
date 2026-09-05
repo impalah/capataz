@@ -7,9 +7,9 @@ import { notifyApiError } from '@/api/notify'
 import type { ActionDefinition } from '@/api/types'
 
 /**
- * Shared action-execution/confirmation flow used by ServiceCard.vue and ServiceDetailPage.vue —
- * extracted to fix duplicated (and previously buggy, see CR-058) confirmation-gating logic
- * living independently in both components (CR-059 in docs/code-review-2026-08.md).
+ * Action-execution/confirmation flow used by ServiceDetailPage.vue — extracted to fix
+ * duplicated (and previously buggy, see CR-058) confirmation-gating logic (CR-059 in
+ * docs/code-review-2026-08.md; it also lived in ServiceCard.vue at the time, since removed).
  */
 export function useActionExecution(serviceId: () => string, onUnattendedRefresh?: () => void) {
   const executions = useExecutionsStore()
@@ -34,7 +34,8 @@ export function useActionExecution(serviceId: () => string, onUnattendedRefresh?
         window.setTimeout(() => onUnattendedRefresh?.(), 1500)
       } else {
         Notify.create({ type: 'positive', message: t('notify.executionCreated') })
-        void router.push(`/executions/${execution.id}`)
+        // Lets the execution page's back button return here instead of defaulting to /executions.
+        void router.push({ path: `/executions/${execution.id}`, query: { back: `/services/${serviceId()}` } })
       }
     } catch (error) {
       notifyApiError(error, t('notify.executionRejected'))

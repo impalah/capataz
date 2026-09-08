@@ -112,20 +112,38 @@ def test_delete_service_missing_returns_409_and_admin_delete_returns_204() -> No
     assert ok.content == b""
 
 
-def test_refresh_status_requires_operator_and_get_status_requires_viewer() -> None:
+def test_refresh_status_requires_viewer_and_there_is_no_cached_status_endpoint() -> None:
+    """There is no cached GET /status anymore (removed 2026-09-08): refresh-status always runs
+
+    the real Portainer/health/Prometheus checks, so it only needs viewer, not operator, RBAC —
+    otherwise read-only users would see no status at all in the Dashboard.
+    """
     repo = InMemoryServiceRepository()
     client = client_for(repo)
     client.post("/api/v1/services", json=make_service_payload(), headers=ADMIN)
 
-    forbidden = client.post("/api/v1/services/open-webui/refresh-status", headers=VIEWER)
+    forbidden = client.post("/api/v1/services/open-webui/refresh-status", headers=NONE_ROLE)
     assert forbidden.status_code == 403
 
-    refreshed = client.post("/api/v1/services/open-webui/refresh-status", headers=OPERATOR)
+    refreshed = client.post("/api/v1/services/open-webui/refresh-status", headers=VIEWER)
     assert refreshed.status_code == 200
     assert refreshed.json()["service_id"] == "open-webui"
 
-    status = client.get("/api/v1/services/open-webui/status", headers=VIEWER)
-    assert status.status_code == 200
+    removed = client.get("/api/v1/services/open-webui/status", headers=VIEWER)
+    assert removed.status_code == 404
+
+
+def test_refresh_status_includes_metrics_when_the_service_declares_them() -> None:
+    repo = InMemoryServiceRepository()
+    client = client_for(repo)
+    payload = make_service_payload()
+    payload["metrics_config"] = [{"label": "CPU", "type": "prometheus", "query": "up"}]
+    client.post("/api/v1/services", json=payload, headers=ADMIN)
+
+    refreshed = client.post("/api/v1/services/open-webui/refresh-status", headers=OPERATOR)
+
+    assert refreshed.status_code == 200
+    assert refreshed.json()["metrics"] == [{"label": "CPU", "value": 1.0}]
 
 
 def test_links_endpoint_returns_dict_for_viewer() -> None:

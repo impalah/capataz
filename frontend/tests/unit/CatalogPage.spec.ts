@@ -10,7 +10,7 @@ import type { ActionDefinition, Service } from '@/api/types'
 vi.mock('@/api/capatazApi', () => ({
   api: {
     services: vi.fn(),
-    status: vi.fn(),
+    refresh: vi.fn(),
     actions: vi.fn(),
     importCatalog: vi.fn(),
     exportCatalog: vi.fn(),
@@ -88,7 +88,7 @@ const mountPage = async () => {
 describe('CatalogPage', () => {
   beforeEach(() => {
     vi.mocked(api.services).mockResolvedValue({ items: [service], total: 1, offset: 0, limit: 50 })
-    vi.mocked(api.status).mockResolvedValue({ service_id: 'open-webui', status: 'healthy', containers: [] })
+    vi.mocked(api.refresh).mockResolvedValue({ service_id: 'open-webui', status: 'healthy', containers: [] })
     vi.mocked(api.actions).mockResolvedValue([])
   })
 
@@ -186,6 +186,48 @@ describe('CatalogPage', () => {
 
     expect(api.createService).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'new-service', name: 'Nuevo servicio' }),
+    )
+  })
+
+  it('creates a service with a metrics row from the dialog form', async () => {
+    vi.mocked(api.createService).mockResolvedValue({ ...service, id: 'new-service' })
+    const { wrapper } = await mountPage()
+
+    const newServiceBtn = wrapper.findAll('button').find((button) => button.text().includes('Nuevo servicio'))
+    await newServiceBtn?.trigger('click')
+    await flushPromises()
+
+    const idInput = wrapper
+      .findAllComponents({ name: 'QInput' })
+      .find((input) => input.props('label') === 'ID (slug)')
+    const nameInput = wrapper
+      .findAllComponents({ name: 'QInput' })
+      .find((input) => input.props('label') === 'Nombre')
+    await idInput?.vm.$emit('update:modelValue', 'new-service')
+    await nameInput?.vm.$emit('update:modelValue', 'Nuevo servicio')
+
+    const addMetricBtn = wrapper.findAll('button').find((button) => button.text().includes('Añadir métrica'))
+    await addMetricBtn?.trigger('click')
+    await flushPromises()
+
+    const metricLabelInput = wrapper
+      .findAllComponents({ name: 'QInput' })
+      .find((input) => input.props('label') === 'Etiqueta')
+    const metricQueryInput = wrapper
+      .findAllComponents({ name: 'QInput' })
+      .find((input) => input.props('label') === 'Consulta')
+    await metricLabelInput?.vm.$emit('update:modelValue', 'CPU')
+    await metricQueryInput?.vm.$emit('update:modelValue', 'up')
+
+    const saveBtn = wrapper.findAll('button').find((button) => button.text() === 'Guardar')
+    await saveBtn?.trigger('click')
+    await flushPromises()
+
+    expect(api.createService).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'new-service',
+        metrics_config: [{ label: 'CPU', type: 'prometheus', query: 'up' }],
+      }),
     )
   })
 
@@ -552,9 +594,7 @@ describe('CatalogPage', () => {
     await flushPromises()
 
     const inputs = wrapper.findAllComponents({ name: 'QInput' })
-    const baseUrlInput = inputs.find(
-      (input) => input.props('label') === 'URL base de Grafana (opcional)',
-    )
+    const baseUrlInput = inputs.find((input) => input.props('label') === 'URL base de Grafana (opcional)')
     const dashboardUrlInput = inputs.find(
       (input) => input.props('label') === 'URL completa del dashboard (opcional)',
     )

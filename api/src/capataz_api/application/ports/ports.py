@@ -37,11 +37,6 @@ class ExecutionQueue(Protocol):
     async def enqueue(self, execution_id: UUID) -> str: ...
 
 
-class StatusCache(Protocol):
-    async def get(self, service_id: str) -> dict[str, Any] | None: ...
-    async def set(self, service_id: str, value: dict[str, Any], ttl: int) -> None: ...
-
-
 class ContainerPlatformPort(Protocol):
     async def container_states(
         self, environment_id: str, selectors: dict[str, Any]
@@ -53,3 +48,7 @@ class ContainerPlatformPort(Protocol):
 
 class HealthProbePort(Protocol):
     async def probe(self, config: dict[str, Any]) -> bool: ...
+
+
+class MetricsProviderPort(Protocol):
+    async def query(self, definitions: list[dict[str, Any]]) -> list[dict[str, Any]]: ...

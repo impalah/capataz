@@ -42,7 +42,7 @@ CAPATAZ_AUTH_MODE=cognito|oidc|dev_mock   # dev_mock SOLO permitido si CAPATAZ_E
 CAPATAZ_INITIAL_CATALOG_YAML_PATH=/app/catalog/services.example.yaml
 CAPATAZ_HTTP_TIMEOUT_SECONDS=5
 CAPATAZ_HEALTH_ALLOWED_HOST_SUFFIXES=.404labo.net
-CAPATAZ_STATUS_CACHE_TTL_SECONDS=30
+CAPATAZ_METRICS_PROVIDER=prometheus|none
 CAPATAZ_FRONTEND_API_BASE_URL=/api/v1   (frontend, servido tras proxy nginx)
 CAPATAZ_FRONTEND_USE_MSW=false          (frontend; dev_mock del lado navegador)
 CAPATAZ_FRONTEND_DEV_USER=ana.admin     (frontend; identidad sintética inicial en dev_mock)
@@ -65,6 +65,7 @@ redis_url                -> api, runner (URL completa, password incluido)
 postgres_password        -> postgres (solo para su propio bootstrap)
 redis_password           -> redis (solo para su propio --requirepass)
 portainer_token          -> api, runner (si runner llama Portainer directo; ver ADR-003)
+prometheus_token         -> api (opcional; solo se envía como Authorization: Bearer si existe el fichero de secreto)
 cognito_client_secret    -> api
 runner_ssh_private_key   -> runner
 runner_known_hosts       -> runner

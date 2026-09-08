@@ -12,7 +12,7 @@ from capataz_api.adapters.inbound.schemas import (
     ServicePatch,
     ServiceResponse,
 )
-from capataz_api.application.policies.rbac import ROLE_ADMIN, ROLE_OPERATOR, ROLE_VIEWER
+from capataz_api.application.policies.rbac import ROLE_ADMIN, ROLE_VIEWER
 from capataz_api.application.services import ServiceApplicationService
 from capataz_api.domain.entities import Principal, Service
 
@@ -106,18 +106,12 @@ async def delete_service(
 async def refresh_status(
     service_id: str,
     service: Annotated[ServiceApplicationService, Depends(service_application_service_dependency)],
-    principal: Annotated[Principal, Depends(require(ROLE_OPERATOR))],
-) -> dict[str, Any]:
-    return await service.refresh_status(service_id)
-
-
-@router.get("/services/{service_id}/status")
-async def get_status(
-    service_id: str,
-    service: Annotated[ServiceApplicationService, Depends(service_application_service_dependency)],
+    # Viewer-level: this only aggregates a live read (Portainer/health/Prometheus), never mutates
+    # capataz's own domain state, so it carries the same trust level as GET /services/{id} — there
+    # is no cached alternative any viewer could fall back to (2026-09-08 removal of GET .../status).
     principal: Annotated[Principal, Depends(require(ROLE_VIEWER))],
 ) -> dict[str, Any]:
-    return await service.get_status(service_id)
+    return await service.refresh_status(service_id)
 
 
 @router.get("/services/{service_id}/links")

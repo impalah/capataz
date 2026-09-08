@@ -40,9 +40,7 @@ const refreshStatus = async (silent = false) => {
     refreshing.value = false
   }
 }
-const { intervalMs: refreshIntervalMs } = useAutoRefresh(() => {
-  if (auth.isOperator) return refreshStatus(true)
-})
+const { intervalMs: refreshIntervalMs } = useAutoRefresh(() => refreshStatus(true))
 const { pending, confirmOpen, requestAction, confirmPending } = useActionExecution(
   () => props.id,
   () => void refreshStatus(true),
@@ -51,12 +49,14 @@ const { pending, confirmOpen, requestAction, confirmPending } = useActionExecuti
 <template>
   <AppLayout
     ><q-page class="page"
-      ><q-btn flat icon="arrow_back" :label="t('pages.serviceDetail.back')" to="/" class="back-link" /><q-banner
-        v-if="services.error"
-        class="error-banner"
-        rounded
-        >{{ services.error }}</q-banner
-      >
+      ><q-btn
+        flat
+        icon="arrow_back"
+        :label="t('pages.serviceDetail.back')"
+        to="/"
+        class="back-link" /><q-banner v-if="services.error" class="error-banner" rounded>{{
+        services.error
+      }}</q-banner>
       <div v-else-if="services.selected" class="detail">
         <header class="detail-header">
           <div class="detail-header-top">
@@ -64,7 +64,8 @@ const { pending, confirmOpen, requestAction, confirmPending } = useActionExecuti
               <p class="eyebrow">
                 {{ services.selected.group_name }} · {{ services.selected.environment
                 }}<template v-if="services.selected.portainer_stack_name">
-                  · {{ t('pages.serviceDetail.stackLabel', { stack: services.selected.portainer_stack_name }) }}
+                  ·
+                  {{ t('pages.serviceDetail.stackLabel', { stack: services.selected.portainer_stack_name }) }}
                 </template>
               </p>
               <h1><q-icon :name="services.selected.icon ?? 'dns'" /> {{ services.selected.name }}</h1>
@@ -72,7 +73,6 @@ const { pending, confirmOpen, requestAction, confirmPending } = useActionExecuti
             <div class="row items-center q-gutter-x-sm">
               <ServiceStatusBadge :status="services.statuses[props.id]?.status" /><AutoRefreshSelect
                 v-model="refreshIntervalMs"
-                :disable="!auth.isOperator"
               /><q-btn
                 flat
                 round
@@ -89,22 +89,23 @@ const { pending, confirmOpen, requestAction, confirmPending } = useActionExecuti
         <section class="detail-grid">
           <article class="panel panel-full">
             <h2>{{ t('pages.serviceDetail.allowedActions') }}</h2>
-            <div class="tile-grid"
-              ><button
+            <div class="tile-grid">
+              <button
                 v-for="action in services.actions"
                 :key="action.id"
                 type="button"
                 class="tile-button"
                 :disabled="!auth.canExecute(action.risk_level) || !action.enabled"
                 @click="requestAction(action)"
-                ><q-icon :name="action.icon ?? 'play_arrow'" size="22px" /><span>{{ action.label }}</span></button
-              ></div
-            >
+              >
+                <q-icon :name="action.icon ?? 'play_arrow'" size="22px" /><span>{{ action.label }}</span>
+              </button>
+            </div>
           </article>
           <article class="panel panel-full">
             <h2>{{ t('pages.serviceDetail.observability') }}</h2>
-            <div class="tile-grid"
-              ><a
+            <div class="tile-grid">
+              <a
                 v-for="(link, label) in services.links"
                 :key="label"
                 :href="link"
@@ -118,9 +119,11 @@ const { pending, confirmOpen, requestAction, confirmPending } = useActionExecuti
                 target="_blank"
                 rel="noopener noreferrer"
                 class="tile-button"
-                ><q-icon name="language" size="22px" /><span>{{ t('pages.serviceDetail.openService') }}</span></a
-              ></div
-            >
+                ><q-icon name="language" size="22px" /><span>{{
+                  t('pages.serviceDetail.openService')
+                }}</span></a
+              >
+            </div>
           </article>
           <article class="panel">
             <h2>{{ t('pages.serviceDetail.containerStatus') }}</h2>

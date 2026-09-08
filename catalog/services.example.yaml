@@ -26,6 +26,13 @@ services:
       variables:
         var-service: open-webui
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="open-webui"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="open-webui"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="open-webui"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="open-webui"}) / 1024 / 1024'
     actions:
       - key: restart
         label: Reiniciar
@@ -71,6 +78,13 @@ services:
       variables:
         var-service: ollama-service
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="ollama-service"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="ollama-service"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="ollama-service"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="ollama-service"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -131,6 +145,13 @@ services:
       variables:
         var-service: postgres-main
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="postgres-main"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="postgres-main"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="postgres-main"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="postgres-main"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -191,6 +212,13 @@ services:
       variables:
         var-service: valkey
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="valkey"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="valkey"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="valkey"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="valkey"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -252,6 +280,13 @@ services:
       variables:
         var-service: pihole
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="pihole"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="pihole"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="pihole"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="pihole"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -314,6 +349,13 @@ services:
       variables:
         var-service: n8n-main
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="n8n-main"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="n8n-main"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="n8n-main"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="n8n-main"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -375,6 +417,13 @@ services:
       variables:
         var-service: vllm
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="vllm"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="vllm"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="vllm"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="vllm"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -436,6 +485,13 @@ services:
       variables:
         var-service: comfyui
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="comfyui"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="comfyui"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="comfyui"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="comfyui"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -498,6 +554,13 @@ services:
       variables:
         var-service: qdrant
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="qdrant"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="qdrant"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="qdrant"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="qdrant"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -558,6 +621,13 @@ services:
       variables:
         var-service: whisper-service
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="whisper-service"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="whisper-service"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="whisper-service"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="whisper-service"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -620,6 +690,13 @@ services:
       variables:
         var-service: grafana
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="grafana"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="grafana"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="grafana"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="grafana"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -682,6 +759,13 @@ services:
       variables:
         var-service: prometheus
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="prometheus"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="prometheus"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="prometheus"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="prometheus"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -744,6 +828,13 @@ services:
       variables:
         var-service: sonarqube
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="sonarqube"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="sonarqube"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="sonarqube"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="sonarqube"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -806,6 +897,13 @@ services:
       variables:
         var-service: bifrost
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="bifrost"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="bifrost"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="bifrost"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="bifrost"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -867,6 +965,13 @@ services:
       variables:
         var-service: rsshub
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="rsshub"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="rsshub"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="rsshub"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="rsshub"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -928,6 +1033,13 @@ services:
       variables:
         var-service: markitdown-service
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="markitdown-service"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="markitdown-service"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="markitdown-service"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="markitdown-service"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -989,6 +1101,13 @@ services:
       variables:
         var-service: crawl4ai-scraper-service
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="crawl4ai-scraper-service"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="crawl4ai-scraper-service"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="crawl4ai-scraper-service"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="crawl4ai-scraper-service"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -1051,6 +1170,13 @@ services:
       variables:
         var-service: n8n-aux
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="n8n-aux"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="n8n-aux"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="n8n-aux"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="n8n-aux"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -1113,6 +1239,13 @@ services:
       variables:
         var-service: portainer
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="portainer"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="portainer"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="portainer"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="portainer"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -1175,6 +1308,13 @@ services:
       variables:
         var-service: vaultwarden
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="vaultwarden"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="vaultwarden"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="vaultwarden"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="vaultwarden"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -1236,6 +1376,13 @@ services:
       variables:
         var-service: apikey-service
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="apikey-service"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="apikey-service"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="apikey-service"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="apikey-service"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -1297,6 +1444,13 @@ services:
       variables:
         var-service: registry
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="registry"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="registry"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="registry"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="registry"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -1358,6 +1512,13 @@ services:
       variables:
         var-service: epub2pdf-service
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="epub2pdf-service"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="epub2pdf-service"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="epub2pdf-service"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="epub2pdf-service"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -1419,6 +1580,13 @@ services:
       variables:
         var-service: pdf2chunks-service
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="pdf2chunks-service"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="pdf2chunks-service"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="pdf2chunks-service"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="pdf2chunks-service"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -1481,6 +1649,13 @@ services:
       variables:
         var-service: open-terminal-mcp
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="open-terminal-mcp"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="open-terminal-mcp"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="open-terminal-mcp"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="open-terminal-mcp"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -1543,6 +1718,13 @@ services:
       variables:
         var-service: infisical
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="infisical"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="infisical"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="infisical"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="infisical"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar
@@ -1605,6 +1787,13 @@ services:
       variables:
         var-service: authentik-server
         kiosk: "true"
+    metrics:
+      - label: CPU
+        type: prometheus
+        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="authentik-server"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="authentik-server"}[30s])) * 100'
+      - label: Memoria
+        type: prometheus
+        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="authentik-server"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="authentik-server"}) / 1024 / 1024'
     actions:
       - key: start
         label: Iniciar

@@ -7,10 +7,8 @@ import ServiceCard from '@/components/ServiceCard.vue'
 import AutoRefreshSelect from '@/components/AutoRefreshSelect.vue'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
 import { useServicesStore } from '@/stores/services'
-import { useAuthStore } from '@/stores/auth'
 import { notifyApiError } from '@/api/notify'
 const services = useServicesStore()
-const auth = useAuthStore()
 const { t } = useI18n()
 const search = ref('')
 const group = ref<string | null>(null)
@@ -38,14 +36,13 @@ const refresh = async (id: string, silent = false) => {
 const refreshAll = async (silent = false) => {
   await Promise.all(services.items.map((service) => refresh(service.id, silent)))
 }
-const { intervalMs: refreshIntervalMs } = useAutoRefresh(() => {
-  if (auth.isOperator) return refreshAll(true)
-})
+const { intervalMs: refreshIntervalMs } = useAutoRefresh(() => refreshAll(true))
 onMounted(async () => {
   // El backend admite hasta 100 por página (CR-092); el Dashboard no pagina todavía, así que pide
   // el máximo en vez del límite por defecto (20) para no ocultar servicios en silencio.
+  // services.fetch ya dispara un refresh-status real (no cacheado) por servicio, así que no hace
+  // falta una segunda pasada de refreshAll aquí.
   await services.fetch({ limit: '100' })
-  if (auth.isOperator) await refreshAll(true)
 })
 </script>
 <template>
@@ -57,13 +54,12 @@ onMounted(async () => {
           <h1>{{ t('pages.dashboard.title') }}</h1>
         </div>
         <div class="row items-center q-gutter-sm">
-          <AutoRefreshSelect v-model="refreshIntervalMs" :disable="!auth.isOperator" /><q-btn
+          <AutoRefreshSelect v-model="refreshIntervalMs" /><q-btn
             color="primary"
             no-caps
             icon="refresh"
             :label="t('pages.dashboard.updateAll')"
             :loading="services.loading"
-            :disable="!auth.isOperator"
             @click="() => refreshAll()"
           /><q-btn
             flat
@@ -96,7 +92,8 @@ onMounted(async () => {
             outlined
             dense
             clearable
-            :label="t('pages.dashboard.groupLabel')" /><q-select
+            :label="t('pages.dashboard.groupLabel')"
+          /><q-select
             v-model="environment"
             :options="environments"
             outlined
@@ -111,9 +108,9 @@ onMounted(async () => {
         }}<template #action
           ><q-btn flat :label="t('common.retry')" @click="services.fetch({ limit: '100' })" /></template
       ></q-banner>
-      <q-banner v-if="services.total > services.items.length" class="q-mb-md" rounded dense
-        >{{ t('pages.dashboard.showingCount', { shown: services.items.length, total: services.total }) }}</q-banner
-      >
+      <q-banner v-if="services.total > services.items.length" class="q-mb-md" rounded dense>{{
+        t('pages.dashboard.showingCount', { shown: services.items.length, total: services.total })
+      }}</q-banner>
       <section v-if="services.loading" class="services-grid" :aria-label="t('pages.dashboard.loadingAria')">
         <q-skeleton v-for="item in 4" :key="item" height="200px" class="skeleton-card" />
       </section>

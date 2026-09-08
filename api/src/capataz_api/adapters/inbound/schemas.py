@@ -50,6 +50,7 @@ class ServiceInput(BaseModel):
     health_config: dict[str, Any] = Field(default_factory=dict)
     grafana_config: dict[str, Any] = Field(default_factory=dict)
     loki_config: dict[str, Any] = Field(default_factory=dict)
+    metrics_config: list[dict[str, Any]] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     maintenance: bool = False
 
@@ -129,6 +130,7 @@ class ServiceResponse(BaseModel):
     health_config: dict[str, Any]
     grafana_config: dict[str, Any]
     loki_config: dict[str, Any]
+    metrics_config: list[dict[str, Any]]
     metadata: dict[str, Any]
     maintenance: bool
     version: int

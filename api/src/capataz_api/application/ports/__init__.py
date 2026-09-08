@@ -3,8 +3,8 @@ from .ports import (
     ExecutionQueue,
     HealthProbePort,
     IdentityProvider,
+    MetricsProviderPort,
     ServiceRepository,
-    StatusCache,
 )
 
 __all__ = [
@@ -12,6 +12,6 @@ __all__ = [
     "ExecutionQueue",
     "HealthProbePort",
     "IdentityProvider",
+    "MetricsProviderPort",
     "ServiceRepository",
-    "StatusCache",
 ]

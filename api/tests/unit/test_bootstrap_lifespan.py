@@ -53,9 +53,39 @@ async def test_lifespan_wires_dev_mock_provider_and_disposes_resources_on_shutdo
         assert app.state.queue is fake_publisher
         assert app.state.engine is fake_engine
         assert app.state.status_service is not None
+        assert app.state.status_service.metrics_provider is None  # no prometheus_url configured
 
     fake_redis.aclose.assert_awaited_once()
     fake_engine.dispose.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_lifespan_wires_prometheus_metrics_provider_when_url_is_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_engine = MagicMock()
+    fake_engine.dispose = AsyncMock()
+    monkeypatch.setattr(lifespan_module, "build_engine", lambda settings: fake_engine)
+    monkeypatch.setattr(lifespan_module, "build_session_factory", lambda engine: MagicMock())
+
+    fake_redis = MagicMock()
+    fake_redis.aclose = AsyncMock()
+    monkeypatch.setattr(lifespan_module.Redis, "from_url", lambda *a, **k: fake_redis)
+    monkeypatch.setattr(lifespan_module, "CeleryExecutionPublisher", lambda *a, **k: MagicMock())
+    monkeypatch.setattr(lifespan_module, "read_secret", lambda name, required=True: None)
+
+    app = FastAPI()
+    app.state.configured_settings = _settings(
+        portainer_url=None,
+        initial_catalog_yaml_path=None,
+        prometheus_url="https://prometheus.404labo.net",
+    )
+
+    async with lifespan_module.lifespan(app):
+        assert (
+            app.state.status_service.metrics_provider.__class__.__name__
+            == "PrometheusMetricsProvider"
+        )
 
 
 @pytest.mark.asyncio

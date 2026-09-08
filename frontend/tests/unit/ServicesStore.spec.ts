@@ -6,7 +6,6 @@ import type { ActionDefinition, Service, ServiceStatusResult } from '@/api/types
 
 vi.mock('@/api/capatazApi', () => ({
   api: {
-    status: vi.fn(),
     actions: vi.fn(),
     services: vi.fn(),
     service: vi.fn(),
@@ -35,9 +34,9 @@ describe('useServicesStore', () => {
     vi.clearAllMocks()
   })
 
-  it('fetchStatus stores the status and swallows API errors', async () => {
+  it('fetchStatus refreshes the status and swallows API errors', async () => {
     const store = useServicesStore()
-    vi.mocked(api.status).mockRejectedValue(new ApiError(500, 'boom', 'req-1'))
+    vi.mocked(api.refresh).mockRejectedValue(new ApiError(500, 'boom', 'req-1'))
     await expect(store.fetchStatus('open-webui')).resolves.toBeUndefined()
     expect(store.statuses['open-webui']).toBeUndefined()
   })
@@ -49,20 +48,30 @@ describe('useServicesStore', () => {
     expect(store.actionsByService['open-webui']).toBeUndefined()
   })
 
-  it("fetch() loads the service list plus each service's status and actions", async () => {
+  it("fetch() loads the service list plus each service's status, without actions by default", async () => {
     const store = useServicesStore()
     vi.mocked(api.services).mockResolvedValue({ items: [service], total: 1, offset: 0, limit: 50 })
-    vi.mocked(api.status).mockResolvedValue(status)
-    vi.mocked(api.actions).mockResolvedValue([restartAction])
+    vi.mocked(api.refresh).mockResolvedValue(status)
 
     await store.fetch({ group: 'IA' })
 
     expect(api.services).toHaveBeenCalledWith({ group: 'IA' })
     expect(store.items).toEqual([service])
     expect(store.statuses['open-webui']).toEqual(status)
-    expect(store.actionsByService['open-webui']).toEqual([restartAction])
+    expect(api.actions).not.toHaveBeenCalled()
     expect(store.loading).toBe(false)
     expect(store.error).toBe('')
+  })
+
+  it('fetch(filters, { includeActions: true }) also loads each service action list', async () => {
+    const store = useServicesStore()
+    vi.mocked(api.services).mockResolvedValue({ items: [service], total: 1, offset: 0, limit: 50 })
+    vi.mocked(api.refresh).mockResolvedValue(status)
+    vi.mocked(api.actions).mockResolvedValue([restartAction])
+
+    await store.fetch({}, { includeActions: true })
+
+    expect(store.actionsByService['open-webui']).toEqual([restartAction])
   })
 
   it('fetch() surfaces a Spanish error message and resets loading when the list call fails', async () => {
@@ -75,19 +84,21 @@ describe('useServicesStore', () => {
     expect(store.loading).toBe(false)
   })
 
-  it('fetchDetail() loads the service, its actions, links and status together', async () => {
+  it('fetchDetail() loads the service, its actions and links, without fetching status itself', async () => {
+    // Status is deliberately not fetched here: ServiceDetailPage.vue always triggers its own
+    // refresh right after fetchDetail resolves, and refresh-status always runs the real
+    // Portainer/health/Prometheus checks — fetching it twice back to back would double that load.
     const store = useServicesStore()
     vi.mocked(api.service).mockResolvedValue(service)
     vi.mocked(api.actions).mockResolvedValue([restartAction])
     vi.mocked(api.links).mockResolvedValue({ portainer: 'https://portainer.home.arpa' })
-    vi.mocked(api.status).mockResolvedValue(status)
 
     await store.fetchDetail('open-webui')
 
     expect(store.selected).toEqual(service)
     expect(store.actions).toEqual([restartAction])
     expect(store.links).toEqual({ portainer: 'https://portainer.home.arpa' })
-    expect(store.statuses['open-webui']).toEqual(status)
+    expect(api.refresh).not.toHaveBeenCalled()
     expect(store.loading).toBe(false)
   })
 

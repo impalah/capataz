@@ -2,6 +2,7 @@ import httpx
 import pytest
 
 from capataz_api.adapters.outbound.portainer import PortainerClient
+from capataz_api.adapters.outbound.prometheus import PrometheusMetricsProvider
 from capataz_api.domain.exceptions import ExternalServiceError
 
 
@@ -112,3 +113,124 @@ async def test_find_link_target_resolves_a_swarm_service_id_by_stack_and_name(mo
         "7", {"services": [{"name": "authentik-server"}], "stack_name": "authentik"}
     )
     assert target_id == "svc789"
+
+
+def _vector(*values: float) -> dict[str, object]:
+    return {
+        "status": "success",
+        "data": {
+            "resultType": "vector",
+            "result": [{"metric": {}, "value": [1700000000, str(v)]} for v in values],
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_prometheus_query_passes_each_definitions_query_verbatim(monkeypatch) -> None:
+    async def fake_request(self, method, url, **kwargs):
+        query = kwargs["params"]["query"]
+        value = 12.5 if query == "cpu_query" else 512.0
+        return httpx.Response(200, json=_vector(value), request=httpx.Request(method, url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "request", fake_request)
+    provider = PrometheusMetricsProvider("https://prometheus.test", None, 5)
+    definitions = [
+        {"label": "CPU", "type": "prometheus", "query": "cpu_query"},
+        {"label": "Memoria", "type": "prometheus", "query": "mem_query"},
+    ]
+
+    result = await provider.query(definitions)
+
+    assert result == [
+        {"label": "CPU", "value": 12.5},
+        {"label": "Memoria", "value": 512.0},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_prometheus_query_sums_multiple_series_when_not_fully_aggregated(monkeypatch) -> None:
+    async def fake_request(self, method, url, **kwargs):
+        return httpx.Response(200, json=_vector(1.0, 2.5), request=httpx.Request(method, url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "request", fake_request)
+    provider = PrometheusMetricsProvider("https://prometheus.test", None, 5)
+
+    result = await provider.query([{"label": "CPU", "type": "prometheus", "query": "q"}])
+
+    assert result == [{"label": "CPU", "value": 3.5}]
+
+
+@pytest.mark.asyncio
+async def test_prometheus_query_returns_none_for_a_query_with_no_data(monkeypatch) -> None:
+    async def fake_request(self, method, url, **kwargs):
+        return httpx.Response(200, json=_vector(), request=httpx.Request(method, url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "request", fake_request)
+    provider = PrometheusMetricsProvider("https://prometheus.test", None, 5)
+
+    result = await provider.query([{"label": "CPU", "type": "prometheus", "query": "q"}])
+
+    assert result == [{"label": "CPU", "value": None}]
+
+
+@pytest.mark.asyncio
+async def test_prometheus_query_returns_none_on_http_error(monkeypatch) -> None:
+    async def fake_request(self, method, url, **kwargs):
+        raise httpx.ConnectError("boom", request=httpx.Request(method, url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "request", fake_request)
+    provider = PrometheusMetricsProvider("https://prometheus.test", None, 5)
+
+    result = await provider.query([{"label": "CPU", "type": "prometheus", "query": "q"}])
+
+    assert result == [{"label": "CPU", "value": None}]
+
+
+@pytest.mark.asyncio
+async def test_prometheus_query_returns_none_on_non_success_status(monkeypatch) -> None:
+    async def fake_request(self, method, url, **kwargs):
+        body = {"status": "error", "error": "bad query"}
+        return httpx.Response(200, json=body, request=httpx.Request(method, url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "request", fake_request)
+    provider = PrometheusMetricsProvider("https://prometheus.test", None, 5)
+
+    result = await provider.query([{"label": "CPU", "type": "prometheus", "query": "q"}])
+
+    assert result == [{"label": "CPU", "value": None}]
+
+
+@pytest.mark.asyncio
+async def test_prometheus_query_returns_none_on_unexpected_response_shape(monkeypatch) -> None:
+    async def fake_request(self, method, url, **kwargs):
+        # "success" without the expected data.result structure.
+        return httpx.Response(200, json={"status": "success"}, request=httpx.Request(method, url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "request", fake_request)
+    provider = PrometheusMetricsProvider("https://prometheus.test", None, 5)
+
+    result = await provider.query([{"label": "CPU", "type": "prometheus", "query": "q"}])
+
+    assert result == [{"label": "CPU", "value": None}]
+
+
+@pytest.mark.asyncio
+async def test_prometheus_query_sends_bearer_token_only_when_configured(monkeypatch) -> None:
+    captured: dict[str, str | None] = {}
+
+    async def fake_request(self, method, url, **kwargs):
+        captured["authorization"] = self.headers.get("authorization")
+        return httpx.Response(200, json=_vector(1.0), request=httpx.Request(method, url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "request", fake_request)
+    provider = PrometheusMetricsProvider("https://prometheus.test", "secret-token", 5)
+
+    await provider.query([{"label": "CPU", "type": "prometheus", "query": "q"}])
+
+    assert captured["authorization"] == "Bearer secret-token"
+
+
+@pytest.mark.asyncio
+async def test_prometheus_query_with_no_definitions_returns_an_empty_list() -> None:
+    provider = PrometheusMetricsProvider("https://prometheus.test", None, 5)
+    assert await provider.query([]) == []

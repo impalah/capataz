@@ -16,6 +16,10 @@ export interface ContainerStatus {
   running: boolean
   healthy?: boolean | null
 }
+export interface MetricValue {
+  label: string
+  value: number | null
+}
 export interface ServiceStatusResult {
   service_id: string
   status: ServiceStatus
@@ -23,6 +27,12 @@ export interface ServiceStatusResult {
   containers: ContainerStatus[]
   external_healthy?: boolean | null
   error?: string
+  metrics?: MetricValue[]
+}
+export interface MetricDefinition {
+  label: string
+  type: 'prometheus'
+  query: string
 }
 export interface ContainerSelector {
   name: string
@@ -70,6 +80,7 @@ export interface Service {
   health_config?: HealthConfig
   grafana_config?: GrafanaConfig
   loki_config?: LokiConfig
+  metrics_config?: MetricDefinition[]
   metadata?: Record<string, string>
   maintenance?: boolean
   version?: number

@@ -110,6 +110,22 @@ services:
     assert field_error.line == 8  # the "- key: restart" line the bad action block starts at
 
 
+def test_catalog_rejects_an_unknown_metrics_provider_type() -> None:
+    raw = """version: 1
+services:
+  - id: open-webui
+    name: Open WebUI
+    group_name: AI
+    environment: homelab
+    metrics:
+      - label: CPU
+        type: netdata
+        query: whatever
+"""
+    with pytest.raises(ValidationError):
+        parse_catalog_yaml(raw)
+
+
 def test_catalog_rejects_extra_portainer_config_keys() -> None:
     raw = """version: 1
 services:
@@ -147,16 +163,7 @@ services:
 
 
 @pytest.mark.asyncio
-async def test_status_service_refreshes_and_caches() -> None:
-    class Cache:
-        value: dict[str, object] | None = None
-
-        async def get(self, key: str) -> dict[str, object] | None:
-            return self.value
-
-        async def set(self, key: str, value: dict[str, object], ttl: int) -> None:
-            self.value = value
-
+async def test_status_service_refreshes() -> None:
     class Platform:
         async def container_states(
             self, environment_id: str, selectors: dict[str, object]
@@ -175,22 +182,14 @@ async def test_status_service_refreshes_and_caches() -> None:
     item = service()
     item.portainer_environment_id = "1"
     item.health_config = {"url": "https://openwebui.home.arpa/health"}
-    status = StatusService(Cache(), Platform(), Prober(), 30)
-    assert (await status.refresh(item))["status"] == "healthy"
-    assert (await status.get(item))["service_id"] == "open-webui"
+    status = StatusService(Platform(), Prober(), None)
+    result = await status.refresh(item)
+    assert result["status"] == "healthy"
+    assert result["service_id"] == "open-webui"
 
 
 @pytest.mark.asyncio
 async def test_status_service_surfaces_portainer_failure_without_hiding_health_probe() -> None:
-    class Cache:
-        value: dict[str, object] | None = None
-
-        async def get(self, key: str) -> dict[str, object] | None:
-            return self.value
-
-        async def set(self, key: str, value: dict[str, object], ttl: int) -> None:
-            self.value = value
-
     class FailingPlatform:
         async def container_states(
             self, environment_id: str, selectors: dict[str, object]
@@ -209,7 +208,7 @@ async def test_status_service_surfaces_portainer_failure_without_hiding_health_p
     item = service()
     item.portainer_environment_id = "1"
     item.health_config = {"url": "https://openwebui.home.arpa/health"}
-    status = StatusService(Cache(), FailingPlatform(), Prober(), 30)
+    status = StatusService(FailingPlatform(), Prober(), None)
     result = await status.refresh(item)
     assert result["error"] == "Portainer authentication was rejected"
     assert result["external_healthy"] is True
@@ -218,15 +217,6 @@ async def test_status_service_surfaces_portainer_failure_without_hiding_health_p
 
 @pytest.mark.asyncio
 async def test_status_service_reports_unexpected_errors_without_leaking_internals() -> None:
-    class Cache:
-        value: dict[str, object] | None = None
-
-        async def get(self, key: str) -> dict[str, object] | None:
-            return self.value
-
-        async def set(self, key: str, value: dict[str, object], ttl: int) -> None:
-            self.value = value
-
     class BuggyPlatform:
         async def container_states(
             self, environment_id: str, selectors: dict[str, object]
@@ -240,10 +230,67 @@ async def test_status_service_reports_unexpected_errors_without_leaking_internal
 
     item = service()
     item.portainer_environment_id = "1"
-    status = StatusService(Cache(), BuggyPlatform(), None, 30)
+    status = StatusService(BuggyPlatform(), None, None)
     result = await status.refresh(item)
     assert result["error"] == "Unexpected error checking Portainer status"
     assert "boom" not in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_status_service_includes_metrics_when_the_service_declares_them() -> None:
+    class MetricsProvider:
+        async def query(self, definitions: list[dict[str, object]]) -> list[dict[str, object]]:
+            return [{"label": d["label"], "value": 42.0} for d in definitions]
+
+    item = service()
+    item.metrics_config = [{"label": "CPU", "type": "prometheus", "query": "up"}]
+    status = StatusService(None, None, MetricsProvider())
+
+    result = await status.refresh(item)
+
+    assert result["metrics"] == [{"label": "CPU", "value": 42.0}]
+
+
+@pytest.mark.asyncio
+async def test_status_service_omits_metrics_key_when_the_service_declares_none() -> None:
+    class MetricsProvider:
+        async def query(self, definitions: list[dict[str, object]]) -> list[dict[str, object]]:
+            raise AssertionError("must not be called when metrics_config is empty")
+
+    item = service()
+    status = StatusService(None, None, MetricsProvider())
+
+    result = await status.refresh(item)
+
+    assert "metrics" not in result
+
+
+@pytest.mark.asyncio
+async def test_status_service_metrics_failure_does_not_hide_status_or_containers() -> None:
+    class Platform:
+        async def container_states(
+            self, environment_id: str, selectors: dict[str, object]
+        ) -> list[dict[str, object]]:
+            return [{"name": "open-webui", "running": True, "healthy": True}]
+
+        async def find_link_target(
+            self, environment_id: str, selectors: dict[str, object]
+        ) -> str | None:
+            return None
+
+    class BuggyMetricsProvider:
+        async def query(self, definitions: list[dict[str, object]]) -> list[dict[str, object]]:
+            raise RuntimeError("Prometheus is unreachable")
+
+    item = service()
+    item.portainer_environment_id = "1"
+    item.metrics_config = [{"label": "CPU", "type": "prometheus", "query": "up"}]
+    status = StatusService(Platform(), None, BuggyMetricsProvider())
+
+    result = await status.refresh(item)
+
+    assert result["status"] == "healthy"
+    assert "metrics" not in result
 
 
 def test_rbac_risk_and_allowlisted_action_resolution() -> None:

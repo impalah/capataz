@@ -22,7 +22,6 @@ export const api = {
   services: (filters: Record<string, string | undefined> = {}) =>
     request<Page<Service>>(`/services${query(filters)}`),
   service: (id: string) => request<Service>(`/services/${id}`),
-  status: (id: string) => request<ServiceStatusResult>(`/services/${id}/status`),
   refresh: (id: string) => request<ServiceStatusResult>(`/services/${id}/refresh-status`, { method: 'POST' }),
   links: (id: string) => request<Record<string, string>>(`/services/${id}/links`),
   actions: (id: string) => request<ActionDefinition[]>(`/services/${id}/actions`),

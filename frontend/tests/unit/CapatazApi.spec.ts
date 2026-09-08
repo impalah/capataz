@@ -42,9 +42,6 @@ describe('capatazApi (thin request() wrappers)', () => {
     await api.service('open-webui')
     expect(request).toHaveBeenCalledWith('/services/open-webui')
 
-    await api.status('open-webui')
-    expect(request).toHaveBeenCalledWith('/services/open-webui/status')
-
     await api.refresh('open-webui')
     expect(request).toHaveBeenCalledWith('/services/open-webui/refresh-status', { method: 'POST' })
 

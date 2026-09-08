@@ -4,7 +4,11 @@ from typing import Any
 from loguru import logger
 
 from capataz_api.application.policies import ContainerObservation, aggregate_status
-from capataz_api.application.ports import ContainerPlatformPort, HealthProbePort, StatusCache
+from capataz_api.application.ports import (
+    ContainerPlatformPort,
+    HealthProbePort,
+    MetricsProviderPort,
+)
 from capataz_api.domain.entities import Service
 from capataz_api.domain.exceptions import ExternalServiceError
 
@@ -12,15 +16,13 @@ from capataz_api.domain.exceptions import ExternalServiceError
 class StatusService:
     def __init__(
         self,
-        cache: StatusCache,
         platform: ContainerPlatformPort | None,
         prober: HealthProbePort | None,
-        ttl: int,
+        metrics_provider: MetricsProviderPort | None,
     ) -> None:
-        self.cache, self.platform, self.prober, self.ttl = cache, platform, prober, ttl
-
-    async def get(self, service: Service) -> dict[str, Any] | None:
-        return await self.cache.get(service.id)
+        self.platform = platform
+        self.prober = prober
+        self.metrics_provider = metrics_provider
 
     async def refresh(self, service: Service) -> dict[str, Any]:
         log = logger.bind(service_id=service.id)
@@ -81,5 +83,11 @@ class StatusService:
         }
         if errors:
             result["error"] = "; ".join(errors)
-        await self.cache.set(service.id, result, self.ttl)
+        if service.metrics_config and self.metrics_provider:
+            try:
+                result["metrics"] = await self.metrics_provider.query(service.metrics_config)
+            except Exception:
+                # Metrics are informational — never let a provider failure blank out the status/
+                # containers/health this method already computed.
+                log.exception("Unexpected error querying service metrics")
         return result

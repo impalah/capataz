@@ -12,7 +12,6 @@ vi.mock('@/api/capatazApi', () => ({
     service: vi.fn(),
     actions: vi.fn(),
     links: vi.fn(),
-    status: vi.fn(),
     refresh: vi.fn(),
     executions: vi.fn(),
     execute: vi.fn(),
@@ -112,7 +111,6 @@ describe('ServiceDetailPage', () => {
     vi.mocked(api.service).mockResolvedValue(service)
     vi.mocked(api.actions).mockResolvedValue([restartAction])
     vi.mocked(api.links).mockResolvedValue({ portainer: 'https://portainer.home.arpa' })
-    vi.mocked(api.status).mockResolvedValue(status)
     vi.mocked(api.refresh).mockResolvedValue(status)
     vi.mocked(api.executions).mockResolvedValue({ items: [execution], total: 1, offset: 0, limit: 20 })
   })
@@ -140,7 +138,9 @@ describe('ServiceDetailPage', () => {
     vi.mocked(api.execute).mockResolvedValue({ ...execution, id: 'e-2' })
     const { wrapper, router } = await mountDetail()
 
-    const actionTile = wrapper.findAll('button.tile-button').find((button) => button.text().includes('Reiniciar'))
+    const actionTile = wrapper
+      .findAll('button.tile-button')
+      .find((button) => button.text().includes('Reiniciar'))
     await actionTile?.trigger('click')
     await flushPromises()
 
@@ -155,7 +155,9 @@ describe('ServiceDetailPage', () => {
     useAuthStore().selectDevRole('capataz-viewer')
     await flushPromises()
 
-    const actionTile = wrapper.findAll('button.tile-button').find((button) => button.text().includes('Reiniciar'))
+    const actionTile = wrapper
+      .findAll('button.tile-button')
+      .find((button) => button.text().includes('Reiniciar'))
 
     expect(actionTile?.attributes('disabled')).toBeDefined()
   })
@@ -172,7 +174,6 @@ describe('ServiceDetailPage', () => {
 
     vi.mocked(api.service).mockResolvedValue(otherService)
     vi.mocked(api.actions).mockResolvedValue([])
-    vi.mocked(api.status).mockResolvedValue(otherStatus)
     vi.mocked(api.refresh).mockResolvedValue(otherStatus)
     vi.mocked(api.executions).mockResolvedValue({ items: [], total: 0, offset: 0, limit: 20 })
 

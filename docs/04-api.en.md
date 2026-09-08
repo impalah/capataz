@@ -42,8 +42,7 @@ Returns `{subject, email, groups}` for the authenticated `Principal`; the fronte
 | GET | `/services/{service_id}` | viewer |
 | PATCH | `/services/{service_id}` | admin |
 | DELETE | `/services/{service_id}` | admin, protected if there are active actions/executions |
-| POST | `/services/{service_id}/refresh-status` | operator/admin |
-| GET | `/services/{service_id}/status` | viewer |
+| POST | `/services/{service_id}/refresh-status` | viewer (runs the real Portainer/health/Prometheus checks — there is no cached read) |
 | GET | `/services/{service_id}/links` | viewer |
 
 `PATCH /services/{service_id}` accepts an optional `expected_version` field (the `version` returned by a previous `GET`). If omitted, the update is last-write-wins (previous behavior). If sent and it doesn't match the row's current version, the API responds `409 Conflict` instead of silently overwriting another concurrent request's change — see CR-034 in `docs/code-review-2026-08.md`.

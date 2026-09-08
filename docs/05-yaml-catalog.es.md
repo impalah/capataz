@@ -103,6 +103,30 @@ loki:
 
 `CAPATAZ_GRAFANA_URL`/`CAPATAZ_LOKI_URL`/`CAPATAZ_PORTAINER_URL` (variables de entorno, ver `core/settings.py`) deben estar configuradas para que estos enlaces se generen, salvo que `grafana.base_url` (o un `grafana.dashboard_url` absoluto) aporte la suya propia; si ninguna de estas fuentes da una URL base, el enlace simplemente no aparece.
 
+## `metrics`
+
+```yaml
+metrics:
+  - label: CPU
+    type: prometheus
+    query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="ollama-service"}[30s])) * 100'
+  - label: Memoria
+    type: prometheus
+    query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="ollama-service"}) / 1024 / 1024'
+```
+
+Lista opcional de métricas a mostrar en la tarjeta y en el detalle de este servicio. Cada entrada:
+
+| Campo | Descripción |
+|---|---|
+| `label` | Texto libre que se muestra encima del valor en la tarjeta (1–100 caracteres). No se localiza — es lo que escriba el admin. |
+| `type` | `Literal["prometheus"]` hoy — el único proveedor implementado. El esquema (`MetricDefinitionCatalog`) y el `MetricsProviderPort` al que mapea son agnósticos del proveedor, así que un adaptador futuro (Netdata, CloudWatch, ...) solo añade otro valor literal aquí, sin cambiar la forma de este campo. |
+| `query` | El texto **completo** de PromQL (1–2000 caracteres), ejecutado tal cual contra `{CAPATAZ_PROMETHEUS_URL}/api/v1/query`. Si Prometheus devuelve más de una serie (la query no quedó del todo agregada a un único valor), las series se suman. |
+
+**Límite de confianza:** a diferencia del hostname validado por SSRF de `health.url` o de los `extra_vars` de Ansible con allow-list en el runner, `query` no tiene validación de forma/contenido más allá de un límite de longitud — se confía en él tal cual. Esto es intencionado y seguro: `metrics` lo escribe quien puede editar el catálogo (solo `capataz-admin`, con el mismo RBAC que protege cualquier otra mutación del catálogo), nunca se deriva de una petición de ejecución ni de ningún otro input de usuario final en tiempo de petición. Trata una `query` del catálogo igual que tratarías una `health.url` o la ruta de un playbook de Ansible — configuración de operador, no algo a aceptar de una fuente no confiable. Ver docs/06-security.md.
+
+Las métricas las consulta `StatusService` del API junto a las comprobaciones de Portainer/health ya existentes — ver [infra/prometheus/README.es.md](../infra/prometheus/README.es.md) para cómo funciona la consulta y el cacheo. Un servicio sin bloque `metrics` simplemente no muestra fila de métricas.
+
 ## `actions`
 
 ```yaml

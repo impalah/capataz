@@ -112,6 +112,7 @@ def catalog_service_to_entity(item: ServiceCatalog) -> Service:
         health_config=item.health.model_dump(mode="json") if item.health else {},
         grafana_config=item.grafana,
         loki_config=item.loki,
+        metrics_config=[metric.model_dump(mode="json") for metric in item.metrics],
         metadata=item.metadata,
         maintenance=item.maintenance,
     )
@@ -185,6 +186,7 @@ def _service_to_catalog_dict(service: Service, actions: list[ActionDefinition]) 
     item["health"] = item.pop("health_config") or None
     item["grafana"] = item.pop("grafana_config")
     item["loki"] = item.pop("loki_config")
+    item["metrics"] = item.pop("metrics_config")
     item["actions"] = [_action_to_catalog_dict(action) for action in actions]
     return {key: value for key, value in item.items() if value is not None}
 

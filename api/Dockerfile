@@ -20,6 +20,8 @@ RUN useradd --create-home --uid 10001 capataz
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/src /app/src
+COPY alembic.ini ./
+COPY alembic ./alembic
 ENV PATH="/app/.venv/bin:$PATH" PYTHONPATH=/app/src PYTHONDONTWRITEBYTECODE=1
 USER capataz
 EXPOSE 8000

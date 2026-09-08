@@ -59,6 +59,11 @@ interface VariableRow {
   key: string
   value: string
 }
+interface MetricRow {
+  label: string
+  type: 'prometheus'
+  query: string
+}
 const emptyServiceForm = (): Partial<Service> => ({
   id: '',
   name: '',
@@ -86,6 +91,8 @@ const grafanaBaseUrl = ref('')
 const grafanaDashboardUrl = ref('')
 const grafanaVariableRows = ref<VariableRow[]>([])
 const lokiQuery = ref('')
+const metricRows = ref<MetricRow[]>([])
+const metricTypes = ['prometheus'] as const
 // Refleja en los refs "extra" del diálogo lo que ya tenga el servicio (edición) o los limpia
 // (alta nueva) — container_selectors/health_config/grafana_config/loki_config son objetos
 // anidados que no se pueden bindear directamente a inputs planos como el resto de `form`.
@@ -115,14 +122,16 @@ const resetServiceFormExtras = (service?: Service) => {
   const variables = service?.grafana_config?.variables ?? {}
   grafanaVariableRows.value = Object.entries(variables).map(([key, value]) => ({ key, value }))
   lokiQuery.value = service?.loki_config?.query ?? ''
+  metricRows.value = (service?.metrics_config ?? []).map((metric) => ({ ...metric }))
 }
 const addContainerRow = () => containerRows.value.push({ name: '', required: true, critical: false })
 const removeContainerRow = (index: number) => containerRows.value.splice(index, 1)
-const addServiceRow = () =>
-  serviceRows.value.push({ name: '', replicas: 1, required: true, critical: false })
+const addServiceRow = () => serviceRows.value.push({ name: '', replicas: 1, required: true, critical: false })
 const removeServiceRow = (index: number) => serviceRows.value.splice(index, 1)
 const addVariableRow = () => grafanaVariableRows.value.push({ key: '', value: '' })
 const removeVariableRow = (index: number) => grafanaVariableRows.value.splice(index, 1)
+const addMetricRow = () => metricRows.value.push({ label: '', type: 'prometheus', query: '' })
+const removeMetricRow = (index: number) => metricRows.value.splice(index, 1)
 const defaultActionConfig = (type: ActionType): Record<string, unknown> =>
   type === 'ansible'
     ? { playbook: '', inventory: '', limit: '', extra_vars: {}, timeout_seconds: 300 }
@@ -207,7 +216,7 @@ const serviceToDelete = ref<Service>()
 const confirmActionDialog = ref(false)
 const actionToDelete = ref<ActionDefinition>()
 onMounted(() => {
-  services.fetch({ limit: '100' }).catch(() => undefined)
+  services.fetch({ limit: '100' }, { includeActions: true }).catch(() => undefined)
 })
 const dryRun = async () => {
   try {
@@ -224,7 +233,7 @@ const applyImport = async () => {
       type: result.valid ? 'positive' : 'negative',
       message: result.valid ? t('notify.catalogImported') : t('notify.catalogHasErrors'),
     })
-    if (result.valid) await services.fetch({ limit: '100' })
+    if (result.valid) await services.fetch({ limit: '100' }, { includeActions: true })
   } catch (error) {
     notifyApiError(error, t('notify.catalogImportRejected'))
   }
@@ -310,6 +319,7 @@ const saveService = async () => {
           }
         : {},
     loki_config: lokiQuery.value.trim() ? { query: lokiQuery.value } : {},
+    metrics_config: metricRows.value.filter((row) => row.label.trim() && row.query.trim()),
   }
   try {
     if (editing.value && form.value.id) {
@@ -319,7 +329,7 @@ const saveService = async () => {
       await api.createService({ id: form.value.id, ...payload })
     }
     serviceDialog.value = false
-    await services.fetch({ limit: '100' })
+    await services.fetch({ limit: '100' }, { includeActions: true })
     Notify.create({
       type: 'positive',
       message: editing.value ? t('notify.serviceUpdated') : t('notify.serviceCreated'),
@@ -344,7 +354,7 @@ const removeService = async () => {
   if (!service) return
   try {
     await api.deleteService(service.id)
-    await services.fetch({ limit: '100' })
+    await services.fetch({ limit: '100' }, { includeActions: true })
     Notify.create({ type: 'positive', message: t('notify.serviceDeleted') })
   } catch (error) {
     notifyApiError(error, t('notify.serviceDeleteFailed'))
@@ -841,6 +851,51 @@ const removeAction = async () => {
               <q-separator />
               <div class="text-subtitle2">{{ t('pages.catalog.lokiSectionTitle') }}</div>
               <q-input v-model="lokiQuery" outlined :label="t('pages.catalog.lokiQueryLabel')" />
+              <q-separator />
+              <div class="text-subtitle2">{{ t('pages.catalog.metricsSectionTitle') }}</div>
+              <div v-for="(row, index) in metricRows" :key="index" class="row q-col-gutter-sm items-center">
+                <q-input
+                  v-model="row.label"
+                  outlined
+                  dense
+                  class="col"
+                  :label="t('pages.catalog.metricLabelLabel')"
+                />
+                <q-select
+                  v-model="row.type"
+                  :options="metricTypes"
+                  outlined
+                  dense
+                  class="col"
+                  :label="t('pages.catalog.metricTypeLabel')"
+                />
+                <q-input
+                  v-model="row.query"
+                  outlined
+                  dense
+                  class="col"
+                  :label="t('pages.catalog.metricQueryLabel')"
+                  :hint="t('pages.catalog.metricQueryHint')"
+                />
+                <q-btn
+                  flat
+                  round
+                  dense
+                  icon="delete"
+                  color="negative"
+                  :aria-label="t('pages.catalog.removeMetricAria')"
+                  @click="removeMetricRow(index)"
+                />
+              </div>
+              <q-btn
+                flat
+                dense
+                no-caps
+                icon="add"
+                color="primary"
+                :label="t('pages.catalog.addMetric')"
+                @click="addMetricRow"
+              />
             </q-card-section>
             <q-card-actions align="right">
               <q-btn v-close-popup flat :label="t('common.cancel')" />

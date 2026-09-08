@@ -24,7 +24,6 @@ x-api-env: &api-env
   CAPATAZ_INITIAL_CATALOG_YAML_PATH: ${CAPATAZ_INITIAL_CATALOG_YAML_PATH:-/app/catalog/services.example.yaml}
   CAPATAZ_HTTP_TIMEOUT_SECONDS: ${CAPATAZ_HTTP_TIMEOUT_SECONDS:-5}
   CAPATAZ_HEALTH_ALLOWED_HOST_SUFFIXES: ${CAPATAZ_HEALTH_ALLOWED_HOST_SUFFIXES:-.404labo.net}
-  CAPATAZ_STATUS_CACHE_TTL_SECONDS: ${CAPATAZ_STATUS_CACHE_TTL_SECONDS:-30}
   # Vacío por defecto: httpx usa el bundle de CAs públicas (certifi) de siempre. Solo
   # rellénalo (a /run/ca-certs/ca-bundle.pem) si confías en una CA interna del homelab —
   # ver `make trust-ca` y docs/09-authentik-oidc-setup.en.md.

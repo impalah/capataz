@@ -49,6 +49,20 @@ class HealthCatalog(BaseModel):
     timeout_seconds: int = Field(default=5, ge=1, le=60)
 
 
+class MetricDefinitionCatalog(BaseModel):
+    """A single admin-authored metric shown on the service card. `query` is full PromQL text —
+
+    this is trusted operator config, never client input: only capataz-admin can write/edit the
+    catalog (same trust level as `HealthCatalog.url` or an Ansible playbook path), and it is
+    queried read-only against Prometheus with a bounded timeout. See docs/06-security.md.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    label: str = Field(min_length=1, max_length=100)
+    type: Literal["prometheus"] = "prometheus"
+    query: str = Field(min_length=1, max_length=2000)
+
+
 class ActionCatalog(BaseModel):
     model_config = ConfigDict(extra="forbid")
     key: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")
@@ -99,6 +113,7 @@ class ServiceCatalog(BaseModel):
     health: HealthCatalog | None = None
     grafana: dict[str, Any] = Field(default_factory=dict)
     loki: dict[str, Any] = Field(default_factory=dict)
+    metrics: list[MetricDefinitionCatalog] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     maintenance: bool = False
     actions: list[ActionCatalog] = Field(default_factory=list)

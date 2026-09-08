@@ -21,16 +21,17 @@ class FailingSession:
         raise RuntimeError("db is down")
 
 
-class FakeCacheWithPing:
-    class _Client:
-        async def ping(self) -> bool:
-            return True
-
-    def __init__(self) -> None:
-        self.client = self._Client()
+class FakeRedisWithPing:
+    async def ping(self) -> bool:
+        return True
 
 
-def build_app(session_cls: type, cache: object | None) -> FastAPI:
+class FailingRedis:
+    async def ping(self) -> bool:
+        raise RuntimeError("redis is down")
+
+
+def build_app(session_cls: type, redis: object) -> FastAPI:
     app = FastAPI()
     app.include_router(router)
     register_exception_handlers(app)
@@ -40,32 +41,34 @@ def build_app(session_cls: type, cache: object | None) -> FastAPI:
         yield session_cls()
 
     app.state.session_factory = session_factory
-    app.state.status_cache = cache
+    app.state.redis = redis
     return app
 
 
 def test_live_endpoint_always_ok() -> None:
-    client = TestClient(build_app(FakeSession, None))
+    client = TestClient(build_app(FakeSession, FakeRedisWithPing()))
     response = client.get("/health/live")
     assert response.status_code == 200
     assert response.json() == {"status": "live"}
 
 
-def test_ready_endpoint_ok_when_db_and_cache_are_up() -> None:
-    client = TestClient(build_app(FakeSession, FakeCacheWithPing()))
+def test_ready_endpoint_ok_when_db_and_redis_are_up() -> None:
+    client = TestClient(build_app(FakeSession, FakeRedisWithPing()))
     response = client.get("/health/ready")
     assert response.status_code == 200
     assert response.json() == {"status": "ready"}
 
 
-def test_ready_endpoint_ok_when_cache_has_no_client_attribute() -> None:
-    client = TestClient(build_app(FakeSession, object()))
+def test_ready_endpoint_returns_503_when_redis_is_unreachable() -> None:
+    client = TestClient(build_app(FakeSession, FailingRedis()))
     response = client.get("/health/ready")
-    assert response.status_code == 200
+    assert response.status_code == 503
+    body = response.json()
+    assert body["detail"] == "Dependencies are not ready"
 
 
 def test_ready_endpoint_returns_503_when_database_is_unreachable() -> None:
-    client = TestClient(build_app(FailingSession, FakeCacheWithPing()))
+    client = TestClient(build_app(FailingSession, FakeRedisWithPing()))
     response = client.get("/health/ready")
     assert response.status_code == 503
     body = response.json()

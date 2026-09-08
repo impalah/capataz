@@ -97,12 +97,44 @@ describe('ServiceCard', () => {
     const { wrapper: withoutStatus } = await mountCard({ service })
     expect(withoutStatus.get('.service-card').classes()).toContain('service-card--unknown')
 
-    const { wrapper: withUnknownStatus } = await mountCard({ service, status: { ...status, status: 'unknown' } })
+    const { wrapper: withUnknownStatus } = await mountCard({
+      service,
+      status: { ...status, status: 'unknown' },
+    })
     expect(withUnknownStatus.get('.service-card').classes()).toContain('service-card--unknown')
   })
 
   it('flags the card red when the service is down', async () => {
     const { wrapper } = await mountCard({ service, status: { ...status, status: 'down' } })
     expect(wrapper.get('.service-card').classes()).toContain('service-card--down')
+  })
+
+  it('renders a grid cell (label + value) for each catalog-declared metric', async () => {
+    const { wrapper } = await mountCard({
+      service,
+      status: {
+        ...status,
+        metrics: [
+          { label: 'CPU', value: 12.5 },
+          { label: 'Memoria', value: 512 },
+        ],
+      },
+    })
+    const cells = wrapper.findAll('.metric-cell')
+    expect(cells.map((cell) => cell.get('.metric-label').text())).toEqual(['CPU', 'Memoria'])
+    expect(cells.map((cell) => cell.get('.metric-value').text())).toEqual(['12.5', '512'])
+  })
+
+  it('shows a placeholder dash for a metric whose value is null', async () => {
+    const { wrapper } = await mountCard({
+      service,
+      status: { ...status, metrics: [{ label: 'CPU', value: null }] },
+    })
+    expect(wrapper.get('.metric-value').text()).toBe('—')
+  })
+
+  it('renders no metrics row when the service declares none', async () => {
+    const { wrapper } = await mountCard({ service, status })
+    expect(wrapper.find('.card-row-metrics').exists()).toBe(false)
   })
 })

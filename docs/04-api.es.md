@@ -42,8 +42,7 @@ Devuelve `{subject, email, groups}` del `Principal` autenticado; el frontend lo 
 | GET | `/services/{service_id}` | viewer |
 | PATCH | `/services/{service_id}` | admin |
 | DELETE | `/services/{service_id}` | admin, protegido si hay acciones/ejecuciones activas |
-| POST | `/services/{service_id}/refresh-status` | operator/admin |
-| GET | `/services/{service_id}/status` | viewer |
+| POST | `/services/{service_id}/refresh-status` | viewer (ejecuta las comprobaciones reales de Portainer/health/Prometheus — no hay lectura cacheada) |
 | GET | `/services/{service_id}/links` | viewer |
 
 `PATCH /services/{service_id}` acepta un campo opcional `expected_version` (el `version` devuelto por un `GET` anterior). Si se omite, la actualización es last-write-wins (comportamiento previo). Si se envía y no coincide con la versión actual de la fila, la API responde `409 Conflict` en vez de sobrescribir silenciosamente el cambio de otra petición concurrente — ver CR-034 en `docs/code-review-2026-08.md`.

@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from capataz_api.application.dto.catalog import MetricDefinitionCatalog
 from capataz_api.application.services import (
     ActionApplicationService,
     ExecutionService,
@@ -124,17 +125,6 @@ class InMemoryServiceRepository:
         return self.audit_events, len(self.audit_events)
 
 
-class FakeStatusCache:
-    def __init__(self, values: dict[str, dict[str, Any]] | None = None) -> None:
-        self.values = values or {}
-
-    async def get(self, service_id: str) -> dict[str, Any] | None:
-        return self.values.get(service_id)
-
-    async def set(self, service_id: str, value: dict[str, Any], ttl: int) -> None:
-        self.values[service_id] = value
-
-
 class FakeQueue:
     def __init__(self) -> None:
         self.enqueued: list[UUID] = []
@@ -186,7 +176,7 @@ async def test_list_services_status_filter_attributes_status_by_id_not_dict_equa
     await repo.upsert_service(make_service("twin-b"))
     await repo.update_status_cache("twin-a", "healthy")
     await repo.update_status_cache("twin-b", "down")
-    service = ServiceApplicationService(repo, StatusService(FakeStatusCache(), None, None, 30))
+    service = ServiceApplicationService(repo, StatusService(None, None, None))
 
     items, total = await service.list_services(
         group_name=None, environment=None, status="healthy", offset=0, limit=20
@@ -206,7 +196,7 @@ async def test_list_services_status_filter_paginates_correctly_across_pages() ->
     for index in range(5):
         await repo.upsert_service(make_service(f"svc-{index}"))
         await repo.update_status_cache(f"svc-{index}", "healthy" if index < 3 else "down")
-    service = ServiceApplicationService(repo, StatusService(FakeStatusCache(), None, None, 30))
+    service = ServiceApplicationService(repo, StatusService(None, None, None))
 
     page1, total1 = await service.list_services(
         group_name=None, environment=None, status="healthy", offset=0, limit=2
@@ -234,7 +224,7 @@ async def test_refresh_status_writes_the_computed_status_to_the_status_cache_col
     """
     repo = InMemoryServiceRepository()
     await repo.upsert_service(make_service("svc", maintenance=True))
-    service = ServiceApplicationService(repo, StatusService(FakeStatusCache(), None, None, 30))
+    service = ServiceApplicationService(repo, StatusService(None, None, None))
 
     await service.refresh_status("svc")
 
@@ -242,9 +232,32 @@ async def test_refresh_status_writes_the_computed_status_to_the_status_cache_col
 
 
 @pytest.mark.asyncio
+async def test_refresh_status_includes_metrics_from_the_configured_provider() -> None:
+    """StatusService.refresh folds metrics_config's query results into the same dict that
+
+    /status and /refresh-status already return — there's no separate metrics endpoint/cache
+    (see test_domain.py for StatusService's own metrics-isolation test coverage).
+    """
+
+    class FakeMetricsProvider:
+        async def query(self, definitions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            return [{"label": d["label"], "value": 42.0} for d in definitions]
+
+    repo = InMemoryServiceRepository()
+    await repo.upsert_service(
+        make_service("svc", metrics_config=[{"label": "CPU", "type": "prometheus", "query": "up"}])
+    )
+    service = ServiceApplicationService(repo, StatusService(None, None, FakeMetricsProvider()))
+
+    result = await service.refresh_status("svc")
+
+    assert result["metrics"] == [{"label": "CPU", "value": 42.0}]
+
+
+@pytest.mark.asyncio
 async def test_create_service_rejects_duplicate_id() -> None:
     repo = InMemoryServiceRepository()
-    service = ServiceApplicationService(repo, StatusService(FakeStatusCache(), None, None, 30))
+    service = ServiceApplicationService(repo, StatusService(None, None, None))
     await service.create_service(
         data={"id": "one", "name": "One", "group_name": "G", "environment": "dev"},
         principal=ADMIN,
@@ -262,7 +275,7 @@ async def test_create_service_rejects_duplicate_id() -> None:
 @pytest.mark.asyncio
 async def test_patch_service_merges_fields_and_get_service_raises_not_found() -> None:
     repo = InMemoryServiceRepository()
-    service = ServiceApplicationService(repo, StatusService(FakeStatusCache(), None, None, 30))
+    service = ServiceApplicationService(repo, StatusService(None, None, None))
     await repo.upsert_service(make_service("one", name="Original"))
     updated = await service.patch_service(
         "one", data={"name": "Patched"}, principal=ADMIN, request_id="r1"
@@ -277,7 +290,7 @@ async def test_patch_service_merges_fields_and_get_service_raises_not_found() ->
 async def test_patch_service_without_expected_version_is_last_write_wins() -> None:
     """Backward-compatible default: omitting expected_version keeps the prior lenient behavior."""
     repo = InMemoryServiceRepository()
-    service = ServiceApplicationService(repo, StatusService(FakeStatusCache(), None, None, 30))
+    service = ServiceApplicationService(repo, StatusService(None, None, None))
     await repo.upsert_service(make_service("one", name="Original"))
     await service.patch_service(
         "one", data={"name": "First writer"}, principal=ADMIN, request_id="r1"
@@ -292,7 +305,7 @@ async def test_patch_service_without_expected_version_is_last_write_wins() -> No
 async def test_patch_service_with_expected_version_rejects_a_stale_concurrent_write() -> None:
     """CR-034: a client-supplied expected_version lets a concurrent stale PATCH be rejected."""
     repo = InMemoryServiceRepository()
-    service = ServiceApplicationService(repo, StatusService(FakeStatusCache(), None, None, 30))
+    service = ServiceApplicationService(repo, StatusService(None, None, None))
     await repo.upsert_service(make_service("one", name="Original"))
 
     original = await service.get_service("one")
@@ -319,7 +332,7 @@ async def test_patch_service_with_expected_version_rejects_a_stale_concurrent_wr
 @pytest.mark.asyncio
 async def test_delete_service_requires_existing_row_and_audits() -> None:
     repo = InMemoryServiceRepository()
-    service = ServiceApplicationService(repo, StatusService(FakeStatusCache(), None, None, 30))
+    service = ServiceApplicationService(repo, StatusService(None, None, None))
     with pytest.raises(ConflictError):
         await service.delete_service("missing", principal=ADMIN, request_id="r1")
     await repo.upsert_service(make_service("one"))
@@ -354,9 +367,7 @@ async def test_get_links_resolves_a_deep_link_to_the_swarm_service() -> None:
             container_selectors={"services": [{"name": "authentik-server"}]},
         )
     )
-    service = ServiceApplicationService(
-        repo, StatusService(FakeStatusCache(), FakePlatform(), None, 30)
-    )
+    service = ServiceApplicationService(repo, StatusService(FakePlatform(), None, None))
     links = await service.get_links(
         "authentik", portainer_url="https://portainer.example", grafana_url=None, loki_url=None
     )
@@ -380,9 +391,7 @@ async def test_get_links_falls_back_to_the_list_page_when_portainer_is_unreachab
     await repo.upsert_service(
         make_service("one", portainer_environment_id="7", portainer_stack_name="one")
     )
-    service = ServiceApplicationService(
-        repo, StatusService(FakeStatusCache(), UnreachablePlatform(), None, 30)
-    )
+    service = ServiceApplicationService(repo, StatusService(UnreachablePlatform(), None, None))
     links = await service.get_links(
         "one", portainer_url="https://portainer.example", grafana_url=None, loki_url=None
     )
@@ -642,3 +651,22 @@ async def test_export_catalog_round_trips_service_and_action_shape() -> None:
     assert reparsed.services[0].portainer is not None
     assert reparsed.services[0].portainer.environment_id == "5"
     assert reparsed.services[0].actions[0].key == "restart"
+
+
+@pytest.mark.asyncio
+async def test_export_catalog_round_trips_metrics_config() -> None:
+    repo = InMemoryServiceRepository()
+    await repo.upsert_service(
+        make_service(
+            "one",
+            portainer_environment_id="5",
+            portainer_stack_name="stack",
+            container_selectors={"containers": [{"name": "one"}], "aggregation": "all_required"},
+            metrics_config=[{"label": "CPU", "type": "prometheus", "query": "up"}],
+        )
+    )
+    exported = await export_catalog(repo)
+    reparsed = parse_catalog_yaml(exported)
+    assert reparsed.services[0].metrics == [
+        MetricDefinitionCatalog(label="CPU", type="prometheus", query="up")
+    ]

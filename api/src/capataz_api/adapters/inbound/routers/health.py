@@ -18,9 +18,7 @@ async def ready(request: Request) -> dict[str, str]:
     try:
         async with request.app.state.session_factory() as session:
             await session.execute(text("SELECT 1"))
-        cache = request.app.state.status_cache
-        if hasattr(cache, "client"):
-            await cache.client.ping()
+        await request.app.state.redis.ping()
     except Exception as exc:
         # The 503 body is deliberately generic (no dependency internals leaked to a caller), so the
         # specific failure (which dependency, what error) must be logged here or it's lost entirely.

@@ -95,11 +95,6 @@ class ServiceApplicationService:
         await self._repo.update_status_cache(service_id, str(result["status"]))
         return result
 
-    async def get_status(self, service_id: str) -> dict[str, Any]:
-        service = await self.get_service(service_id)
-        result = await self._status_service.get(service)
-        return result or {"service_id": service_id, "status": "unknown"}
-
     async def get_links(
         self,
         service_id: str,

@@ -30,13 +30,13 @@ class ServiceModel(Base):
     health_config: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
     grafana_config: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
     loki_config: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    metrics_config: Mapped[list[dict[str, Any]]] = mapped_column(JSONType, default=list)
     metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", JSONType, default=dict)
     maintenance: Mapped[bool] = mapped_column(Boolean, default=False)
     # Queryable mirror of the last computed ServiceStatus, written by
-    # ServiceApplicationService.refresh_status after StatusService.refresh() — the
-    # authoritative status still lives in the Redis StatusCache; this column exists solely
-    # so list_services can filter by `status` in SQL instead of scanning every service
-    # through the cache in application code.
+    # ServiceApplicationService.refresh_status after StatusService.refresh() (the only place
+    # status is ever computed — there is no other cache) — this column exists solely so
+    # list_services can filter by `status` in SQL instead of recomputing it in application code.
     status_cache: Mapped[str | None] = mapped_column(String(20), nullable=True)
     status_cache_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

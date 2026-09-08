@@ -7,7 +7,11 @@ import { api } from '@/api/capatazApi'
 import type { Service, ServiceStatusResult } from '@/api/types'
 
 vi.mock('@/api/capatazApi', () => ({
-  api: { services: vi.fn(), status: vi.fn(), actions: vi.fn(), refresh: vi.fn() },
+  api: {
+    services: vi.fn(),
+    actions: vi.fn(),
+    refresh: vi.fn(),
+  },
 }))
 
 const service1: Service = {
@@ -57,17 +61,28 @@ describe('DashboardPage', () => {
       offset: 0,
       limit: 100,
     })
-    vi.mocked(api.status).mockResolvedValue(status)
     vi.mocked(api.actions).mockResolvedValue([])
     vi.mocked(api.refresh).mockResolvedValue(status)
   })
 
-  it('loads and renders the service list, auto-refreshing status for operators', async () => {
+  it('loads and renders the service list, refreshing status for every service (viewer included)', async () => {
     const { wrapper } = await mountDashboard()
     expect(wrapper.text()).toContain('Open WebUI')
     expect(wrapper.text()).toContain('Immich')
-    // Default auth store state is capataz-admin (an operator), so onMounted() also refreshes.
-    expect(api.refresh).toHaveBeenCalled()
+    // There is no cached GET .../status any more — refresh-status (viewer-accessible, always a
+    // real Portainer/health/Prometheus read) is the only way to load status, for any role.
+    expect(api.refresh).toHaveBeenCalledTimes(2)
+    // The Servicios list has no action buttons any more (CatalogPage is the only page that
+    // needs each service's action list), so fetch() must not request it here.
+    expect(api.actions).not.toHaveBeenCalled()
+  })
+
+  it("renders each service's catalog-declared metrics, arriving embedded in its status", async () => {
+    const statusWithMetrics = { ...status, metrics: [{ label: 'CPU', value: 12 }] }
+    vi.mocked(api.refresh).mockResolvedValue(statusWithMetrics)
+    const { wrapper } = await mountDashboard()
+    expect(wrapper.get('.metric-label').text()).toBe('CPU')
+    expect(wrapper.get('.metric-value').text()).toBe('12.0')
   })
 
   it('requests the maximum page size instead of the backend default (CR-092)', async () => {
@@ -76,7 +91,12 @@ describe('DashboardPage', () => {
   })
 
   it('shows a banner when more services exist than were loaded (CR-092)', async () => {
-    vi.mocked(api.services).mockResolvedValue({ items: [service1, service2], total: 5, offset: 0, limit: 100 })
+    vi.mocked(api.services).mockResolvedValue({
+      items: [service1, service2],
+      total: 5,
+      offset: 0,
+      limit: 100,
+    })
     const { wrapper } = await mountDashboard()
     expect(wrapper.text()).toContain('Mostrando 2 de 5 servicios.')
   })
@@ -113,7 +133,7 @@ describe('DashboardPage', () => {
     expect((remounted.get('.filters').element as HTMLElement).style.display).not.toBe('none')
   })
 
-  it('disables bulk-refresh affordances for a viewer', async () => {
+  it('keeps bulk-refresh available to a viewer (refresh-status is a plain read, viewer-accessible)', async () => {
     const { wrapper } = await mountDashboard()
     useAuthStore().selectDevRole('capataz-viewer')
     await flushPromises()
@@ -122,7 +142,7 @@ describe('DashboardPage', () => {
       .findAll('button')
       .find((button) => button.text().includes('Actualizar todo'))
 
-    expect(refreshAllBtn?.attributes('disabled')).toBeDefined()
+    expect(refreshAllBtn?.attributes('disabled')).toBeUndefined()
   })
 
   it('shows the API error banner and can retry', async () => {

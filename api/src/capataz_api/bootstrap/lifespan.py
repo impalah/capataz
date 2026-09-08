@@ -14,6 +14,7 @@ from capataz_api.adapters.inbound.auth import (
 )
 from capataz_api.adapters.outbound.health import HttpHealthProber
 from capataz_api.adapters.outbound.portainer import PortainerClient
+from capataz_api.adapters.outbound.prometheus import PrometheusMetricsProvider
 from capataz_api.application.services.catalog import import_startup_catalog
 from capataz_api.application.services.status import StatusService
 from capataz_api.core.logging import configure_logging
@@ -21,7 +22,6 @@ from capataz_api.core.settings import Settings, get_settings
 from capataz_api.infrastructure.celery import CeleryExecutionPublisher
 from capataz_api.infrastructure.database import build_engine, build_session_factory
 from capataz_api.infrastructure.database.repositories import SqlAlchemyRepository
-from capataz_api.infrastructure.health import RedisStatusCache
 from capataz_api.infrastructure.secrets import read_secret
 
 
@@ -34,7 +34,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.session_factory = build_session_factory(app.state.engine)
     redis_client = Redis.from_url(settings.redis_url, decode_responses=True)
     app.state.redis = redis_client
-    app.state.status_cache = RedisStatusCache(redis_client)
     app.state.queue = CeleryExecutionPublisher(settings.redis_url, settings.celery_queue)
     if settings.auth_mode == "dev_mock":
         app.state.identity_provider = DevMockIdentityProvider()
@@ -56,11 +55,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             platform = PortainerClient(
                 str(settings.portainer_url), token, settings.http_timeout_seconds
             )
+    metrics_provider = None
+    if settings.metrics_provider == "prometheus" and settings.prometheus_url:
+        metrics_token = read_secret("prometheus_token", required=False)
+        metrics_provider = PrometheusMetricsProvider(
+            str(settings.prometheus_url), metrics_token, settings.http_timeout_seconds
+        )
     app.state.status_service = StatusService(
-        app.state.status_cache,
         platform,
         HttpHealthProber(settings.health_suffixes, settings.http_timeout_seconds),
-        settings.status_cache_ttl_seconds,
+        metrics_provider,
     )
     if settings.initial_catalog_yaml_path:
         async with app.state.session_factory() as session:

@@ -34,7 +34,14 @@ class Settings(BaseSettings):
     initial_catalog_yaml_path: str | None = None
     http_timeout_seconds: float = Field(default=5, gt=0, le=60)
     health_allowed_host_suffixes: str = ".404labo.net"
-    status_cache_ttl_seconds: int = Field(default=30, gt=0)
+    metrics_provider: str = "prometheus"
+
+    @field_validator("metrics_provider")
+    @classmethod
+    def known_metrics_provider(cls, value: str) -> str:
+        if value not in {"prometheus", "none"}:
+            raise ValueError("metrics_provider must be prometheus or none")
+        return value
 
     @field_validator("auth_mode")
     @classmethod

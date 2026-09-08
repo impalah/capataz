@@ -142,15 +142,9 @@ class InMemoryServiceRepository:
         return items, len(items)
 
 
-class FakeStatusCache:
-    def __init__(self, values: dict[str, dict[str, Any]] | None = None) -> None:
-        self.values = values or {}
-
-    async def get(self, service_id: str) -> dict[str, Any] | None:
-        return self.values.get(service_id)
-
-    async def set(self, service_id: str, value: dict[str, Any], ttl: int) -> None:
-        self.values[service_id] = value
+class FakeMetricsProvider:
+    async def query(self, definitions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [{"label": definition["label"], "value": 1.0} for definition in definitions]
 
 
 class FakeQueue:
@@ -175,7 +169,7 @@ def build_app(repo: InMemoryServiceRepository, queue: FakeQueue | None = None) -
     register_routes(app)
     register_exception_handlers(app)
     app.state.identity_provider = DevMockIdentityProvider()
-    app.state.status_service = StatusService(FakeStatusCache(), None, None, 30)
+    app.state.status_service = StatusService(None, None, FakeMetricsProvider())
     app.state.queue = queue or FakeQueue()
     app.state.settings = FakeSettings()
 

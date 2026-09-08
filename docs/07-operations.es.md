@@ -157,7 +157,7 @@ Para contraseñas de PostgreSQL/Redis, la rotación requiere cambiar también la
 
 ## Monitorización y logs
 
-`docker compose logs -f api`, `docker compose logs -f runner` y la búsqueda por `X-Request-ID` son el primer punto de observación. En producción activa `CAPATAZ_LOG_JSON=true` y lleva stdout a tu colector. Las tarjetas se alimentan de cache con TTL `CAPATAZ_STATUS_CACHE_TTL_SECONDS`; se puede lanzar refresh explícito.
+`docker compose logs -f api`, `docker compose logs -f runner` y la búsqueda por `X-Request-ID` son el primer punto de observación. En producción activa `CAPATAZ_LOG_JSON=true` y lleva stdout a tu colector. Las tarjetas siempre disparan un `refresh-status` en vivo (las comprobaciones de Portainer/health/Prometheus se ejecutan en cada lectura) — no hay caché que calentar ni invalidar.
 
 Grafana y Loki se usan con deep-links declarados. Mide como mínimo salud de procesos, disponibilidad PostgreSQL/Redis, latencia/error del API, profundidad de `automation`, ejecuciones terminales por estado, duración y fallos de integraciones. No incluyas tokens, YAML sin sanitizar ni secretos como labels o atributos de logs.
 

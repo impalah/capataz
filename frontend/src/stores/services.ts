@@ -22,10 +22,10 @@ export const useServicesStore = defineStore('services', {
     // Tracks which service id fetchDetail is currently "for", so a late-arriving response after
     // navigating to a different service can never overwrite the new one's state (CR-072).
     currentId: undefined as string | undefined,
-    // Per-id, per-resource generation counters (CR-089): fetchDetail and fetchStatus/refresh are
-    // guarded independently, because fetchDetail calls fetchStatus itself — sharing one counter
-    // between them would make fetchDetail see its own nested call as "a newer request superseded
-    // me" and incorrectly skip clearing `loading`.
+    // Per-id, per-resource generation counters (CR-089): fetchDetail's own loading/error state and
+    // refresh()'s status writes are guarded independently, since ServiceDetailPage triggers a
+    // refresh right after fetchDetail resolves — a stale one must never clobber the current one,
+    // independently of whether the detail load itself is also stale.
     detailSeq: {} as Record<string, number>,
     statusSeq: {} as Record<string, number>,
     // Collapsed by default; expanded only once the user has explicitly opened it before.
@@ -36,15 +36,15 @@ export const useServicesStore = defineStore('services', {
       this.filtersExpanded = value
       localStorage.setItem(FILTERS_EXPANDED_STORAGE_KEY, value ? 'open' : 'closed')
     },
+    // Silent wrapper around refresh(): used wherever a status is loaded as part of a bigger view
+    // (the services list, the detail page) rather than an explicit user-triggered refresh — its
+    // failure is informative only and must never block the rest of that view from rendering.
+    // There is no cached alternative to fall back to: refresh() always runs the real
+    // Portainer/health/Prometheus checks (GET .../status was removed 2026-09-08).
     async fetchStatus(id: string): Promise<void> {
-      const seq = (this.statusSeq[id] = (this.statusSeq[id] ?? 0) + 1)
       try {
-        const status = await api.status(id)
-        if (this.statusSeq[id] !== seq) return
-        this.statuses[id] = status
+        await this.refresh(id)
       } catch (error) {
-        // el estado es informativo; su ausencia no debe romper la vista del servicio, pero se
-        // registra con su request id para poder correlacionar con los logs del backend (CR-061)
         if (import.meta.env.DEV) {
           const requestId = error instanceof ApiError ? error.requestId : undefined
           console.debug(`No se pudo cargar el estado de ${id} (request_id=${requestId}):`, error)
@@ -62,7 +62,10 @@ export const useServicesStore = defineStore('services', {
         }
       }
     },
-    async fetch(filters: Record<string, string | undefined> = {}): Promise<void> {
+    async fetch(
+      filters: Record<string, string | undefined> = {},
+      { includeActions = false }: { includeActions?: boolean } = {},
+    ): Promise<void> {
       this.loading = true
       this.error = ''
       try {
@@ -70,7 +73,10 @@ export const useServicesStore = defineStore('services', {
         this.items = page.items
         this.total = page.total
         await Promise.all(
-          page.items.flatMap((service) => [this.fetchStatus(service.id), this.fetchActionsFor(service.id)]),
+          page.items.flatMap((service) => [
+            this.fetchStatus(service.id),
+            ...(includeActions ? [this.fetchActionsFor(service.id)] : []),
+          ]),
         )
       } catch {
         this.error = i18n.global.t('pages.dashboard.loadFailed')
@@ -89,7 +95,9 @@ export const useServicesStore = defineStore('services', {
         this.selected = service
         this.actions = actions
         this.links = links
-        await this.fetchStatus(id)
+        // Status is not fetched here: ServiceDetailPage.vue triggers its own refresh right after
+        // this resolves, and refresh-status always runs the real checks — fetching it twice back
+        // to back would just double the load on Portainer/health/Prometheus for nothing.
       } catch {
         if (this.currentId !== id || this.detailSeq[id] !== seq) return
         this.error = i18n.global.t('pages.serviceDetail.loadFailed')

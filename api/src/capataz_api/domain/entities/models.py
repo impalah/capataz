@@ -38,6 +38,7 @@ class Service:
     health_config: dict[str, Any] = field(default_factory=dict)
     grafana_config: dict[str, Any] = field(default_factory=dict)
     loki_config: dict[str, Any] = field(default_factory=dict)
+    metrics_config: list[dict[str, Any]] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     maintenance: bool = False
     version: int = 1

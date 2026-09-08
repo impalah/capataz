@@ -35,6 +35,7 @@ def service_from(model: ServiceModel) -> Service:
         health_config=model.health_config,
         grafana_config=model.grafana_config,
         loki_config=model.loki_config,
+        metrics_config=model.metrics_config,
         metadata=model.metadata_json,
         maintenance=model.maintenance,
         version=model.version,
@@ -146,6 +147,7 @@ class SqlAlchemyRepository:
             "health_config": service.health_config,
             "grafana_config": service.grafana_config,
             "loki_config": service.loki_config,
+            "metrics_config": service.metrics_config,
             "metadata_json": sanitize(service.metadata),
             "maintenance": service.maintenance,
         }

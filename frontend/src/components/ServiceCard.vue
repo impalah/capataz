@@ -2,12 +2,14 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { Service, ServiceStatusResult } from '@/api/types'
+import { formatMetricValue } from '@/utils/format'
 import ServiceStatusBadge from './ServiceStatusBadge.vue'
 const props = defineProps<{
   service: Service
   status?: ServiceStatusResult
 }>()
 const { t, locale } = useI18n()
+const metrics = computed(() => props.status?.metrics ?? [])
 // Surfaces service health at a glance beyond the small status badge: an unknown status (not
 // loaded yet, or the backend genuinely can't tell) mutes the whole card, and "down" flags it red.
 const cardStateClass = computed(() => {
@@ -47,6 +49,12 @@ const cardStateClass = computed(() => {
       <div class="card-row-title">
         <span class="card-icon"><q-icon :name="service.icon ?? 'dns'" size="28px" /></span>
         <h2>{{ service.name }}</h2>
+      </div>
+      <div v-if="metrics.length" class="card-row-metrics">
+        <div v-for="metric in metrics" :key="metric.label" class="metric-cell">
+          <span class="metric-label">{{ metric.label }}</span>
+          <span class="metric-value">{{ formatMetricValue(metric.value) }}</span>
+        </div>
       </div>
     </div>
   </article>

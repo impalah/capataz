@@ -53,7 +53,7 @@ The dependency direction always points toward the domain. A controller holds no 
 
 ## V1 decisions and boundaries
 
-V1 uses a persistent Celery worker and Redis as broker/result backend. The API contains no Ansible or SSH tooling. Grafana/Loki are resolved as deep links; Prometheus sits behind a future port, with no unnecessary credentials. The migration to ephemeral Docker jobs is specified in [future-ephemeral-runner.md](11-future-ephemeral-runner.en.md), and the durable decisions live in the [ADRs](adr/).
+V1 uses a persistent Celery worker and Redis as broker/result backend. The API contains no Ansible or SSH tooling. Grafana/Loki are resolved as deep links; Prometheus sits behind a `MetricsProviderPort` (`CAPATAZ_METRICS_PROVIDER`) invoked from `StatusService.refresh` alongside the Portainer/health checks it already does — each service's catalog-declared `metrics` (admin-authored PromQL, one query per metric) are folded into the same `refresh-status` response, with no separate endpoint, cache, or unnecessary credentials. There is no cached `GET .../status` endpoint — every status read runs the real Portainer/health/Prometheus checks — see [infra/prometheus/README.md](../infra/prometheus/README.md). The migration to ephemeral Docker jobs is specified in [future-ephemeral-runner.md](11-future-ephemeral-runner.en.md), and the durable decisions live in the [ADRs](adr/).
 
 The exact availability of remote health checks depends on Portainer and on declared configurations. A service without sufficient configuration is shown as `unknown`; `maintenance` is an administrative decision with visual priority.
 

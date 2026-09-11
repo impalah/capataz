@@ -6,12 +6,13 @@ from capataz_api.domain.exceptions import ExternalServiceError
 
 
 class PortainerClient:
-    def __init__(self, base_url: str, token: str, timeout: float = 5) -> None:
+    def __init__(self, base_url: str, token: str, timeout: float = 5, verify: bool = True) -> None:
         self.base_url, self.token, self.timeout = base_url.rstrip("/"), token, timeout
+        self.verify = verify
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(timeout=self.timeout, verify=self.verify) as client:
                 response = await client.request(
                     method, f"{self.base_url}{path}", headers={"X-API-Key": self.token}, **kwargs
                 )

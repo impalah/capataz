@@ -1,44 +1,56 @@
 """Pure link-building for external tools; no I/O, so it belongs in application, not outbound."""
 
+from collections.abc import Mapping
 from urllib.parse import quote, urlencode
 
+from capataz_api.domain.entities import Connector, Service
+from capataz_api.domain.specs import GrafanaConnector, LokiConnector, PortainerConnector
 
-def resolve_links(
-    service: object, portainer_url: str | None, grafana_url: str | None, loki_url: str | None
-) -> dict[str, str]:
+
+def _base(url: object) -> str:
+    return str(url).rstrip("/")
+
+
+def resolve_links(service: Service, connectors: Mapping[str, Connector]) -> dict[str, str]:
+    """Deep links keyed by name; each dashboard is keyed by its label (default "grafana")."""
+    spec = service.spec
     links: dict[str, str] = {}
-    for attr, key in (("service_url", "service"), ("documentation_url", "documentation")):
-        if value := getattr(service, attr):
-            links[key] = value
-    if portainer_url and getattr(service, "portainer_environment_id", None):
-        selectors = getattr(service, "container_selectors", {}) or {}
-        kind = "services" if selectors.get("services") else "containers"
-        path = f"#!/{service.portainer_environment_id}/docker/{kind}"
-        links["portainer"] = f"{portainer_url.rstrip('/')}/{path}"
-    grafana = getattr(service, "grafana_config", {}) or {}
-    # grafana.base_url lets a service point at a different Grafana instance than the system
-    # default (grafana_url) — some homelab services run their own, e.g. a per-node Grafana.
-    base_url = str(grafana.get("base_url") or grafana_url or "").rstrip("/")
-    if dashboard_url := grafana.get("dashboard_url"):
-        # An explicit dashboard_url is the full, final path (or already-absolute URL): it wins
-        # over dashboard_uid/variables entirely, since the caller has already resolved those.
-        dashboard_url = str(dashboard_url)
-        if dashboard_url.startswith(("http://", "https://")):
-            links["grafana"] = dashboard_url
-        elif base_url:
-            links["grafana"] = f"{base_url}/{dashboard_url.lstrip('/')}"
-    elif base_url and grafana.get("dashboard_uid"):
-        # Variables are passed through verbatim (not auto-prefixed with "var-") so a service can
-        # also set non-variable query params Grafana recognizes, e.g. kiosk=tv.
-        variables = {
-            str(key): str(value) for key, value in grafana.get("variables", {}).items()
-        }
-        suffix = f"?{urlencode(variables)}" if variables else ""
-        # safe="/" lets dashboard_uid carry a folder path (e.g. "homelab-generic/generic-service")
-        # without Grafana rejecting a %2F-encoded slash in that segment of the URL.
-        dashboard_uid = quote(str(grafana["dashboard_uid"]), safe="/")
-        links["grafana"] = f"{base_url}/d/{dashboard_uid}{suffix}"
-    loki = getattr(service, "loki_config", {})
-    if loki_url and loki.get("query"):
-        links["loki"] = f"{loki_url.rstrip('/')}/explore?{urlencode({'left': loki['query']})}"
+    if spec.service_url:
+        links["service"] = str(spec.service_url)
+    if spec.documentation_url:
+        links["documentation"] = str(spec.documentation_url)
+
+    runtime = spec.runtime
+    portainer = connectors.get(runtime.connector) if runtime else None
+    if runtime and portainer and isinstance(portainer.spec, PortainerConnector):
+        path = f"#!/{runtime.environment_id}/docker/{runtime.selector_kind}"
+        links["portainer"] = f"{_base(portainer.spec.config.url)}/{path}"
+
+    for dashboard in spec.observability.dashboards:
+        grafana = connectors.get(dashboard.connector)
+        if grafana is None or not isinstance(grafana.spec, GrafanaConnector):
+            continue
+        base = _base(grafana.spec.config.url)
+        if dashboard.url:
+            # An explicit url is the full, final path (or already-absolute URL): it wins over
+            # uid/slug/variables entirely, since the caller has already resolved those.
+            links[dashboard.label] = (
+                dashboard.url
+                if dashboard.url.startswith(("http://", "https://"))
+                else f"{base}/{dashboard.url.lstrip('/')}"
+            )
+            continue
+        # Variables pass through verbatim (not auto-prefixed with "var-") so a service can also
+        # set non-variable query params Grafana recognizes, e.g. kiosk=tv.
+        suffix = f"?{urlencode(dashboard.variables)}" if dashboard.variables else ""
+        # safe="/" lets a legacy uid still carry a folder path without Grafana rejecting %2F.
+        path = f"d/{quote(str(dashboard.uid), safe='/')}"
+        if dashboard.slug:
+            path = f"{path}/{dashboard.slug}"
+        links[dashboard.label] = f"{base}/{path}{suffix}"
+
+    logs = spec.observability.logs
+    loki = connectors.get(logs.connector) if logs else None
+    if logs and loki and isinstance(loki.spec, LokiConnector):
+        links["loki"] = f"{_base(loki.spec.config.url)}/explore?{urlencode({'left': logs.query})}"
     return links

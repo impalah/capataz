@@ -1,3 +1,3 @@
-from .models import ActionDefinition, Execution, Principal, Service
+from .models import ActionDefinition, Connector, Execution, Principal, Resource, Service
 
-__all__ = ["ActionDefinition", "Execution", "Principal", "Service"]
+__all__ = ["ActionDefinition", "Connector", "Execution", "Principal", "Resource", "Service"]

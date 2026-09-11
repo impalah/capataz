@@ -30,3 +30,9 @@ Los secretos se guardan como ficheros locales ignorados bajo `secrets/` y Compos
 > los propios contenedores `postgres`/`redis`. `api`/`runner` reciben el DSN completo (password
 > incluido) como un único secreto — `database_url`/`redis_url` — en vez de ensamblarlo desde variables
 > `CAPATAZ_POSTGRES_*`/`CAPATAZ_REDIS_*` sueltas más el secreto de password.
+
+> Actualización (ver [ADR-008](008-connectors-and-resources.es.md)): `portainer_token`, `prometheus_token`,
+> `runner_ssh_private_key`, `runner_known_hosts` y `ansible_vault_password` ya no son Docker secrets.
+> Son recursos del catálogo, cifrados en PostgreSQL con el nuevo Docker secret `resources_master_key`
+> (montado en `api` y `runner`) y referenciados por conectores. Este ADR sigue rigiendo todos los
+> Docker secrets restantes.

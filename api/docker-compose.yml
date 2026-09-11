@@ -25,10 +25,8 @@ x-api-env: &api-env
   CAPATAZ_CORS_ORIGINS: ${CAPATAZ_CORS_ORIGINS:-http://localhost:8080}
   CAPATAZ_CELERY_QUEUE: ${CAPATAZ_CELERY_QUEUE:-automation}
   CAPATAZ_CELERY_CONCURRENCY: ${CAPATAZ_CELERY_CONCURRENCY:-2}
-  CAPATAZ_PORTAINER_URL: ${CAPATAZ_PORTAINER_URL:-https://portainer.404labo.net}
-  CAPATAZ_GRAFANA_URL: ${CAPATAZ_GRAFANA_URL:-https://grafana.404labo.net}
-  CAPATAZ_LOKI_URL: ${CAPATAZ_LOKI_URL:-https://loki.404labo.net}
-  CAPATAZ_PROMETHEUS_URL: ${CAPATAZ_PROMETHEUS_URL:-https://prometheus.404labo.net}
+  CAPATAZ_RESOURCES_DIR: ${CAPATAZ_RESOURCES_DIR:-/run/capataz-resources}
+  CAPATAZ_ALLOW_INLINE_RESOURCES: ${CAPATAZ_ALLOW_INLINE_RESOURCES:-false}
   CAPATAZ_COGNITO_REGION: ${CAPATAZ_COGNITO_REGION:-eu-west-1}
   CAPATAZ_COGNITO_USER_POOL_ID: ${CAPATAZ_COGNITO_USER_POOL_ID:-}
   CAPATAZ_COGNITO_APP_CLIENT_ID: ${CAPATAZ_COGNITO_APP_CLIENT_ID:-}
@@ -58,11 +56,13 @@ services:
       - ./alembic.ini:/app/alembic.ini:ro
       - ./alembic:/app/alembic:ro
       - ../certs:/run/ca-certs:ro
+      # Ver docker-compose.yml de la raíz: directorio propio, nunca ../secrets.
+      - ../resources:/run/capataz-resources:ro
     secrets:
       - database_url
       - redis_url
-      - portainer_token
       - cognito_client_secret
+      - resources_master_key
     depends_on:
       postgres:
         condition: service_healthy
@@ -186,7 +186,7 @@ secrets:
     file: ../secrets/database_url
   redis_url:
     file: ../secrets/redis_url
-  portainer_token:
-    file: ../secrets/portainer_token
   cognito_client_secret:
     file: ../secrets/cognito_client_secret
+  resources_master_key:
+    file: ../secrets/resources_master_key

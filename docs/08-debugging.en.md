@@ -42,10 +42,11 @@ curl -i http://localhost:8000/health/ready
 
 ## Portainer, Healthchecks, and Ansible
 
-- Portainer: confirm `CAPATAZ_PORTAINER_URL`, connectivity from the service that consumes it, and that the token has only the required read/operate permissions. Check `environment_id`, stack, and the declared selectors; never test with an arbitrary container ID.
+- Portainer: confirm the Portainer connector's URL (`https`) and its token resource (**Catalog → Connectors/Resources**), connectivity from the service that consumes it (API for status, runner for actions), and that the token has only the required read/operate permissions. Check the service `runtime` (`environment_id`, stack, declared selectors); never test with an arbitrary container ID.
 - HTTP health: check URL, DNS, certificate, and the `CAPATAZ_HEALTH_ALLOWED_HOST_SUFFIXES` allow-list. Loopback, link-local, and cloud metadata addresses must be rejected unless explicit, reviewed configuration allows them.
-- Ansible/SSH: validate the key secret, permissions, `runner_known_hosts` format, technical account, inventory, and `limit`. A host key failure is fixed by updating the verified fingerprint, not by using `StrictHostKeyChecking=no`.
-- Vault: verify that the secret file isn't empty and that logs are sanitized. Don't print extra variables or `-vvv` without redaction and access control.
+- Ansible/SSH: validate the connector's `private_key`/`known_hosts` resources (type and content — replace them if in doubt), technical account, inventory, and `limit`; for an `ssh` connector, that the `command_id` exists in `runner/ssh_commands.yml` and the parameters match its patterns (otherwise the execution is `rejected`). A host key failure is fixed by updating the verified `known_hosts` resource, not by using `StrictHostKeyChecking=no`.
+- Vault: verify that the connector's `vault_password` resource isn't empty and that logs are sanitized. Don't print extra variables or `-vvv` without redaction and access control.
+- Resources: if the API doesn't start, check that `resources_master_key` is mounted; a resource that no longer decrypts (a key removed from that secret too early) makes the executions that need it `rejected` — re-upload its content.
 
 ## Common Secrets and Cognito Failures
 

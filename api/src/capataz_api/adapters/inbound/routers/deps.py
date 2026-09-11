@@ -10,7 +10,10 @@ from capataz_api.application.ports import ServiceRepository
 from capataz_api.application.services import (
     ActionApplicationService,
     AuditService,
+    CatalogContext,
+    ConnectorApplicationService,
     ExecutionService,
+    ResourceApplicationService,
     ServiceApplicationService,
 )
 from capataz_api.domain.entities import Principal
@@ -44,7 +47,27 @@ def require(required: str) -> Callable[[Principal], Principal]:
 def service_application_service_dependency(
     request: Request, repo: ServiceRepository = Depends(repo_dependency)
 ) -> ServiceApplicationService:
-    return ServiceApplicationService(repo, request.app.state.status_service)
+    state = request.app.state
+    return ServiceApplicationService(
+        repo, state.status_service, state.resource_cipher, state.settings.health_suffixes
+    )
+
+
+def catalog_context_dependency(request: Request) -> CatalogContext:
+    context: CatalogContext = request.app.state.catalog_context
+    return context
+
+
+def connector_application_service_dependency(
+    request: Request, repo: ServiceRepository = Depends(repo_dependency)
+) -> ConnectorApplicationService:
+    return ConnectorApplicationService(repo, request.app.state.settings.health_suffixes)
+
+
+def resource_application_service_dependency(
+    request: Request, repo: ServiceRepository = Depends(repo_dependency)
+) -> ResourceApplicationService:
+    return ResourceApplicationService(repo, request.app.state.resource_cipher)
 
 
 def action_application_service_dependency(

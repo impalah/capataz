@@ -4,7 +4,15 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from capataz_api.domain.exceptions import ConflictError
-from capataz_api.domain.value_objects import ActionType, ExecutionSource, ExecutionStatus, RiskLevel
+from capataz_api.domain.specs import ConnectorSpec, ServiceSpec, connector_type
+from capataz_api.domain.value_objects import (
+    ActionType,
+    ConnectorType,
+    ExecutionSource,
+    ExecutionStatus,
+    ResourceType,
+    RiskLevel,
+)
 
 
 def utcnow() -> datetime:
@@ -25,25 +33,22 @@ TERMINAL_EXECUTION_STATUSES = frozenset(
 @dataclass(slots=True)
 class Service:
     id: str
-    name: str
-    group_name: str
-    environment: str
-    description: str | None = None
-    icon: str | None = None
-    service_url: str | None = None
-    documentation_url: str | None = None
-    portainer_environment_id: str | None = None
-    portainer_stack_name: str | None = None
-    container_selectors: dict[str, Any] = field(default_factory=dict)
-    health_config: dict[str, Any] = field(default_factory=dict)
-    grafana_config: dict[str, Any] = field(default_factory=dict)
-    loki_config: dict[str, Any] = field(default_factory=dict)
-    metrics_config: list[dict[str, Any]] = field(default_factory=list)
-    metadata: dict[str, Any] = field(default_factory=dict)
-    maintenance: bool = False
+    spec: ServiceSpec
     version: int = 1
     created_at: datetime = field(default_factory=utcnow)
     updated_at: datetime = field(default_factory=utcnow)
+
+    @property
+    def name(self) -> str:
+        return self.spec.name
+
+    @property
+    def group_name(self) -> str:
+        return self.spec.group_name
+
+    @property
+    def environment(self) -> str:
+        return self.spec.environment
 
 
 @dataclass(slots=True)
@@ -53,6 +58,8 @@ class ActionDefinition:
     label: str
     action_type: ActionType
     risk_level: RiskLevel
+    # The connector this action runs through; action_type always equals that connector's type.
+    connector_id: str
     id: UUID = field(default_factory=uuid4)
     description: str | None = None
     icon: str | None = None
@@ -115,6 +122,42 @@ class Execution:
     @property
     def is_terminal(self) -> bool:
         return self.status in TERMINAL_EXECUTION_STATUSES
+
+
+@dataclass(slots=True)
+class Resource:
+    """An encrypted file/secret. Only ciphertext ever lives here — never the plaintext.
+
+    `source` is non-secret provenance (e.g. {"file": "ssh_mole_key"}, {"env": "X"},
+    {"inline": True}, {"upload": True}), kept so a catalog export can say where it came from.
+    """
+
+    id: str
+    type: ResourceType
+    ciphertext: bytes
+    fingerprint: str
+    size: int
+    description: str | None = None
+    source: dict[str, Any] = field(default_factory=dict)
+    version: int = 1
+    created_at: datetime = field(default_factory=utcnow)
+    updated_at: datetime = field(default_factory=utcnow)
+
+
+@dataclass(slots=True)
+class Connector:
+    spec: ConnectorSpec
+    version: int = 1
+    created_at: datetime = field(default_factory=utcnow)
+    updated_at: datetime = field(default_factory=utcnow)
+
+    @property
+    def id(self) -> str:
+        return self.spec.id
+
+    @property
+    def type(self) -> ConnectorType:
+        return connector_type(self.spec)
 
 
 @dataclass(slots=True)

@@ -1,0 +1,31 @@
+# Allow-listed commands for `ssh` connectors — the only thing an ssh action can ever run
+# (docs/06-security.en.md). An action references one of these ids plus parameter values; it can
+# never carry command text of its own.
+#
+# argv: each element is either a literal, or exactly one "{param}" placeholder that is filled with
+#       a value matching that parameter's `pattern` (a full-match regex) or `enum`. Values are
+#       never spliced into the middle of a literal.
+# The joined command is shell-quoted element by element before it is sent, because the remote
+# side always runs it through the target user's login shell. As defence in depth, also pin the
+# key in the target's authorized_keys with a forced `command=`/`restrict` where practical.
+commands:
+  uptime:
+    description: Uptime and load average
+    argv: [uptime]
+  memory:
+    description: Memory usage (free -h)
+    argv: [free, -h]
+  disk_usage:
+    description: Disk usage (df -h) of a path
+    argv: [df, -h, "{path}"]
+    params:
+      path: {pattern: "^/[A-Za-z0-9_./-]{0,200}$", default: /}
+  docker_ps:
+    description: Running Docker containers and their status
+    argv: [docker, ps, --format, "{{.Names}}\t{{.Status}}"]
+  systemd_status:
+    description: Status of a systemd unit (last 20 log lines)
+    argv: [systemctl, status, --no-pager, --lines=20, "{unit}"]
+    params:
+      unit: {pattern: "^[A-Za-z0-9@._-]{1,100}$"}
+    timeout_seconds: 30

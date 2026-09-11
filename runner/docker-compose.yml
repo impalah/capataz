@@ -22,10 +22,6 @@ x-api-env: &api-env
   CAPATAZ_CORS_ORIGINS: ${CAPATAZ_CORS_ORIGINS:-http://localhost:8080}
   CAPATAZ_CELERY_QUEUE: ${CAPATAZ_CELERY_QUEUE:-automation}
   CAPATAZ_CELERY_CONCURRENCY: ${CAPATAZ_CELERY_CONCURRENCY:-2}
-  CAPATAZ_PORTAINER_URL: ${CAPATAZ_PORTAINER_URL:-https://portainer.404labo.net}
-  CAPATAZ_GRAFANA_URL: ${CAPATAZ_GRAFANA_URL:-https://grafana.404labo.net}
-  CAPATAZ_LOKI_URL: ${CAPATAZ_LOKI_URL:-https://loki.404labo.net}
-  CAPATAZ_PROMETHEUS_URL: ${CAPATAZ_PROMETHEUS_URL:-https://prometheus.404labo.net}
   CAPATAZ_COGNITO_REGION: ${CAPATAZ_COGNITO_REGION:-eu-west-1}
   CAPATAZ_COGNITO_USER_POOL_ID: ${CAPATAZ_COGNITO_USER_POOL_ID:-}
   CAPATAZ_COGNITO_APP_CLIENT_ID: ${CAPATAZ_COGNITO_APP_CLIENT_ID:-}
@@ -53,10 +49,7 @@ services:
     secrets:
       - database_url
       - redis_url
-      - portainer_token
-      - runner_ssh_private_key
-      - runner_known_hosts
-      - ansible_vault_password
+      - resources_master_key
     depends_on:
       postgres:
         condition: service_healthy
@@ -173,11 +166,5 @@ secrets:
     file: ../secrets/database_url
   redis_url:
     file: ../secrets/redis_url
-  portainer_token:
-    file: ../secrets/portainer_token
-  runner_ssh_private_key:
-    file: ../secrets/runner_ssh_private_key
-  runner_known_hosts:
-    file: ../secrets/runner_known_hosts
-  ansible_vault_password:
-    file: ../secrets/ansible_vault_password
+  resources_master_key:
+    file: ../secrets/resources_master_key

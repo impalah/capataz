@@ -6,30 +6,34 @@ import asyncio
 import contextlib
 import json
 import os
+import shlex
 import shutil
 import signal
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 import httpx
+from pydantic import SecretStr
 
 from capataz_runner.actions import (
     ActionConfigurationError,
     ResolvedAnsibleAction,
     ResolvedPortainerAction,
+    ResolvedSshAction,
     resolve_action,
 )
 from capataz_runner.config import Settings
 from capataz_runner.ports import AutomationExecutorPort, AutomationJob, ExecutionResult
 from capataz_runner.sanitization import sanitize_data, sanitize_text
+from capataz_runner.ssh_commands import SshCommand, SshCommandsError, load_ssh_commands
 
 
 @dataclass(frozen=True)
-class AnsibleProcessResult:
+class ProcessResult:
     returncode: int
     stdout: str
     stderr: str
@@ -44,10 +48,77 @@ def _repo_file(project_root: Path, relative: str) -> Path:
     return candidate
 
 
-def build_ansible_command(action: ResolvedAnsibleAction, settings: Settings) -> tuple[str, ...]:
+# --- credentials ----------------------------------------------------------------------------
+
+_NEWLINE_TERMINATED = frozenset({"private_key", "known_hosts"})
+
+
+@contextlib.contextmanager
+def materialized_secrets(secrets: Mapping[str, bytes]) -> Iterator[dict[str, Path]]:
+    """Write decrypted resources to owner-only files for the duration of one execution.
+
+    ansible-playbook/ssh only take key, known_hosts and vault material as file paths. The files
+    live in a fresh 0700 directory, are created 0600 with O_EXCL, and are removed on exit —
+    including when the execution raises or times out.
+    """
+    directory = Path(tempfile.mkdtemp(prefix="capataz-secrets-"))
+    try:
+        paths: dict[str, Path] = {}
+        for name, content in secrets.items():
+            if name in _NEWLINE_TERMINATED and not content.endswith(b"\n"):
+                # OpenSSH rejects a key/known_hosts file whose last line isn't newline-terminated.
+                content += b"\n"
+            path = directory / name
+            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(content)
+            paths[name] = path
+        yield paths
+    finally:
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+def _credential(credentials: Mapping[str, Path], name: str) -> Path:
+    path = credentials.get(name)
+    if path is None:
+        raise ActionConfigurationError(f"Connector does not provide a {name} resource")
+    return path
+
+
+def collect_known_secrets(settings: Settings, job: AutomationJob | None = None) -> tuple[str, ...]:
+    """Every secret value worth redacting from process output or a traceback (best effort).
+
+    A missing/unreadable secret must not break the error-logging path itself: losing one
+    redaction target is far better than losing the ability to log the original error.
+    """
+    values: list[str] = []
+    getters: tuple[Callable[[], SecretStr], ...] = (
+        lambda: settings.postgres_password,
+        lambda: settings.redis_password,
+    )
+    for getter in getters:
+        try:
+            values.append(getter().get_secret_value())
+        except Exception:
+            continue
+    for content in job.secrets.values() if job is not None else ():
+        text = content.decode("utf-8", errors="ignore").strip()
+        values.append(text)
+        # A multi-line secret (a private key) can also leak one line at a time.
+        values.extend(line.strip() for line in text.splitlines() if len(line.strip()) >= 16)
+    return tuple(dict.fromkeys(value for value in values if value))
+
+
+# --- commands -------------------------------------------------------------------------------
+
+
+def build_ansible_command(
+    action: ResolvedAnsibleAction, settings: Settings, credentials: Mapping[str, Path]
+) -> tuple[str, ...]:
     """Build an argument vector; no user-provided text can become shell syntax."""
     playbook = _repo_file(settings.project_root, action.playbook)
     inventory = _repo_file(settings.project_root, action.inventory)
+    known_hosts = _credential(credentials, "known_hosts")
     command = [
         "ansible-playbook",
         "--inventory",
@@ -55,12 +126,14 @@ def build_ansible_command(action: ResolvedAnsibleAction, settings: Settings) -> 
         "--limit",
         action.limit,
         "--private-key",
-        str(settings.runner_ssh_private_key_path),
+        str(_credential(credentials, "private_key")),
         "--ssh-common-args",
-        f"-o UserKnownHostsFile={settings.runner_known_hosts_path} -o StrictHostKeyChecking=yes",
-        "--vault-password-file",
-        str(settings.ansible_vault_password_path),
+        f"-o UserKnownHostsFile={known_hosts} -o StrictHostKeyChecking=yes",
     ]
+    if action.user:
+        command.extend(("--user", action.user))
+    if "vault_password" in credentials:
+        command.extend(("--vault-password-file", str(credentials["vault_password"])))
     if action.extra_vars:
         command.extend(
             ("--extra-vars", json.dumps(action.extra_vars, separators=(",", ":"), sort_keys=True))
@@ -69,8 +142,37 @@ def build_ansible_command(action: ResolvedAnsibleAction, settings: Settings) -> 
     return tuple(command)
 
 
-def minimal_ansible_environment(home: str) -> dict[str, str]:
-    """Return a deliberately small, deterministic environment for Ansible subprocesses."""
+def build_ssh_command(
+    action: ResolvedSshAction, credentials: Mapping[str, Path]
+) -> tuple[str, ...]:
+    """The local argv is execve'd (no local shell). The remote command is a single string that
+    the target's login shell parses, so every element is individually shell-quoted — on top of
+    each parameter value already having matched its allow-listed pattern (defence in depth)."""
+    known_hosts = _credential(credentials, "known_hosts")
+    return (
+        "ssh",
+        "-i",
+        str(_credential(credentials, "private_key")),
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "IdentitiesOnly=yes",
+        "-o",
+        "StrictHostKeyChecking=yes",
+        "-o",
+        f"UserKnownHostsFile={known_hosts}",
+        "-p",
+        str(action.port),
+        "-l",
+        action.user,
+        "--",
+        action.host,
+        shlex.join(action.argv),
+    )
+
+
+def minimal_subprocess_environment(home: str) -> dict[str, str]:
+    """Return a deliberately small, deterministic environment for ansible/ssh subprocesses."""
     path = os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin")
     return {
         "PATH": path,
@@ -85,8 +187,7 @@ def minimal_ansible_environment(home: str) -> dict[str, str]:
 # CR-084: process.communicate() buffers a subprocess's entire stdout/stderr in memory with no
 # upper bound. A verbose playbook (accidental -vvvv, a remote command that dumps a large file to
 # stdout) could exhaust the worker container's memory well before timeout_seconds elapses —
-# parse_ansible_result already only keeps the last 4000 chars anyway, so nothing downstream needs
-# more than a bounded capture in the first place.
+# the parsers already only keep the last 4000 chars anyway, so nothing downstream needs more.
 _MAX_CAPTURED_STREAM_BYTES = 2 * 1024 * 1024  # 2 MiB per stream
 
 
@@ -109,26 +210,26 @@ async def _read_bounded(stream: asyncio.StreamReader | None, limit: int) -> byte
             captured += len(take)
 
 
-async def run_ansible_subprocess(
+async def run_subprocess(
     command: tuple[str, ...],
     *,
     cwd: Path,
     timeout_seconds: int,
     known_secrets: tuple[str, ...] = (),
     termination_grace_seconds: float = 10.0,
-) -> AnsibleProcessResult:
+) -> ProcessResult:
     """Run a fixed command through execve semantics and safely collect bounded diagnostics."""
     # A private, owner-only HOME (rather than a shared world-writable directory like /tmp)
-    # so Ansible's config/lookup machinery can't be influenced by other processes on the host.
-    home_dir = tempfile.mkdtemp(prefix="capataz-ansible-home-")
+    # so ansible's/ssh's config machinery can't be influenced by other processes on the host.
+    home_dir = tempfile.mkdtemp(prefix="capataz-home-")
     try:
         process = await asyncio.create_subprocess_exec(
             *command,
             cwd=str(cwd),
-            env=minimal_ansible_environment(home_dir),
+            env=minimal_subprocess_environment(home_dir),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            start_new_session=True,  # own process group, so ansible's per-host SSH children can be reaped too
+            start_new_session=True,  # own process group, so per-host SSH children are reaped too
         )
         try:
             stdout, stderr = await asyncio.wait_for(
@@ -141,8 +242,8 @@ async def run_ansible_subprocess(
             await process.wait()
         except TimeoutError:
             await _terminate_process_group(process, termination_grace_seconds)
-            return AnsibleProcessResult(-1, "", "execution timed out", timed_out=True)
-        return AnsibleProcessResult(
+            return ProcessResult(-1, "", "execution timed out", timed_out=True)
+        return ProcessResult(
             process.returncode if process.returncode is not None else -1,
             sanitize_text(stdout.decode("utf-8", errors="replace"), known_secrets),
             sanitize_text(stderr.decode("utf-8", errors="replace"), known_secrets),
@@ -166,35 +267,40 @@ async def _terminate_process_group(
             await asyncio.wait_for(process.wait(), timeout=grace_seconds)
 
 
-def parse_ansible_result(result: AnsibleProcessResult) -> ExecutionResult:
-    """Translate Ansible process output without treating output as trusted structured data."""
+def _parse_process_result(result: ProcessResult, tool: str, code: str) -> ExecutionResult:
+    """Translate process output without treating it as trusted structured data."""
     if result.timed_out:
         return ExecutionResult(
-            "timed_out", "Ansible execution exceeded its timeout", error_code="ansible_timeout"
+            "timed_out", f"{tool} exceeded its timeout", error_code=f"{code}_timeout"
         )
     output = (result.stdout + "\n" + result.stderr).strip()
     if result.returncode == 0:
-        return ExecutionResult(
-            "succeeded", "Ansible playbook completed", {"output": output[-4000:]}
-        )
+        return ExecutionResult("succeeded", f"{tool} completed", {"output": output[-4000:]})
     return ExecutionResult(
-        "failed",
-        "Ansible playbook failed",
-        {"output": output[-4000:]},
-        error_code="ansible_failed",
+        "failed", f"{tool} failed", {"output": output[-4000:]}, error_code=f"{code}_failed"
     )
 
 
-def _declared_container_names(selectors: Mapping[str, Any]) -> set[str]:
-    """Extract the allow-listed container names from a service's container_selectors.
+def parse_ansible_result(result: ProcessResult) -> ExecutionResult:
+    return _parse_process_result(result, "Ansible playbook", "ansible")
 
-    The persisted shape (set by the catalog/API, see docs/05-yaml-catalog.en.md) is
-    ``{"containers": [{"name": ..., "required": ..., "critical": ...}, ...], "aggregation": ...}`` —
-    the same shape the API's own Portainer status adapter consumes.
+
+def parse_ssh_result(result: ProcessResult) -> ExecutionResult:
+    return _parse_process_result(result, "SSH command", "ssh")
+
+
+# --- Portainer ------------------------------------------------------------------------------
+
+
+def _declared_container_names(selectors: Mapping[str, Any]) -> set[str]:
+    """Extract the allow-listed container names from a service runtime's selectors.
+
+    The persisted shape is the API's RuntimeSpec: ``{"containers": [{"name": ..., "required":
+    ..., "critical": ...}, ...], ...}`` — the same shape the API's own status adapter consumes.
     """
     declared = selectors.get("containers")
     if not isinstance(declared, list):
-        raise ActionConfigurationError("Service container_selectors has an invalid shape")
+        raise ActionConfigurationError("Service runtime selectors have an invalid shape")
     return {
         str(item["name"]).removeprefix("/")
         for item in declared
@@ -229,7 +335,7 @@ def _declared_service_specs(selectors: Mapping[str, Any]) -> dict[str, Mapping[s
     """Same role as ``_declared_container_names`` but for the ``services`` selector shape."""
     declared = selectors.get("services")
     if not isinstance(declared, list):
-        raise ActionConfigurationError("Service container_selectors has an invalid shape")
+        raise ActionConfigurationError("Service runtime selectors have an invalid shape")
     return {
         str(item["name"]).removeprefix("/"): item
         for item in declared
@@ -269,13 +375,33 @@ def resolve_selected_services(
 class PortainerClient:
     """Small async Portainer Docker-proxy client limited to already selected containers/services."""
 
-    def __init__(self, settings: Settings) -> None:
-        parsed = urlparse(settings.portainer_url)
+    def __init__(self, base_url: str, token: str, timeout: float, verify: bool = True) -> None:
+        parsed = urlparse(base_url)
         if parsed.scheme != "https" or not parsed.netloc:
-            raise ActionConfigurationError("CAPATAZ_PORTAINER_URL must be an HTTPS base URL")
-        self._base_url = settings.portainer_url.rstrip("/")
-        self._token = settings.portainer_token.get_secret_value()
-        self._timeout = settings.http_timeout_seconds
+            raise ActionConfigurationError("Portainer connector URL must be an HTTPS base URL")
+        if not token:
+            raise ActionConfigurationError("Portainer connector token is empty")
+        self._base_url = base_url.rstrip("/")
+        self._token = token
+        self._timeout = timeout
+        self._verify = verify
+
+    @classmethod
+    def from_job(cls, job: AutomationJob, settings: Settings) -> PortainerClient:
+        token = job.secrets.get("token")
+        if token is None:
+            raise ActionConfigurationError("Portainer connector does not provide a token resource")
+        return cls(
+            str(job.connector_config.get("url", "")),
+            token.decode("utf-8").strip(),
+            settings.http_timeout_seconds,
+            bool(job.connector_config.get("verify_tls", True)),
+        )
+
+    def _client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            timeout=self._timeout, headers={"X-API-Key": self._token}, verify=self._verify
+        )
 
     async def execute(
         self,
@@ -291,9 +417,8 @@ class PortainerClient:
     async def _execute_container(
         self, operation: ResolvedPortainerAction, environment_id: str, selectors: Mapping[str, Any]
     ) -> ExecutionResult:
-        headers = {"X-API-Key": self._token}
         base = f"{self._base_url}/api/endpoints/{environment_id}/docker/containers"
-        async with httpx.AsyncClient(timeout=self._timeout, headers=headers) as client:
+        async with self._client() as client:
             response = await client.get(f"{base}/json", params={"all": "true"})
             response.raise_for_status()
             payload = response.json()
@@ -328,9 +453,8 @@ class PortainerClient:
         selectors: Mapping[str, Any],
         stack_name: object,
     ) -> ExecutionResult:
-        headers = {"X-API-Key": self._token}
         base = f"{self._base_url}/api/endpoints/{environment_id}/docker/services"
-        async with httpx.AsyncClient(timeout=self._timeout, headers=headers) as client:
+        async with self._client() as client:
             response = await client.get(base)
             response.raise_for_status()
             payload = response.json()
@@ -389,6 +513,9 @@ class PortainerClient:
         update_response.raise_for_status()
 
 
+# --- executor -------------------------------------------------------------------------------
+
+
 class PersistentWorkerAutomationExecutor(AutomationExecutorPort):
     """V1 executor which runs jobs within the long-lived Celery worker process."""
 
@@ -397,35 +524,52 @@ class PersistentWorkerAutomationExecutor(AutomationExecutorPort):
         self._portainer_client = portainer_client
 
     async def execute(self, job: AutomationJob) -> ExecutionResult:
-        action = resolve_action(job.action_type, job.action_config, job.params)
-        if isinstance(action, ResolvedAnsibleAction):
-            command = build_ansible_command(action, self._settings)
-            # settings.execution_timeout_seconds is an operator-configurable ceiling below the
-            # 900s allow-listed by actions.py \u2014 defaults to 900 (a no-op) but can be tightened
-            # per-deployment without touching the catalog.
-            timeout_seconds = min(action.timeout_seconds, self._settings.execution_timeout_seconds)
-            result = await run_ansible_subprocess(
+        action = resolve_action(
+            job.action_type,
+            job.action_config,
+            job.params,
+            job.connector_config,
+            self._ssh_commands(job),
+        )
+        if isinstance(action, ResolvedPortainerAction):
+            return await self._execute_portainer(action, job)
+        # settings.execution_timeout_seconds is an operator-configurable ceiling below the
+        # allow-listed maximum — defaults to 900 (a no-op) but can be tightened per deployment.
+        timeout_seconds = min(action.timeout_seconds, self._settings.execution_timeout_seconds)
+        parse: Callable[[ProcessResult], ExecutionResult]
+        with materialized_secrets(job.secrets) as credentials:
+            if isinstance(action, ResolvedAnsibleAction):
+                command = build_ansible_command(action, self._settings, credentials)
+                parse = parse_ansible_result
+            else:
+                command = build_ssh_command(action, credentials)
+                parse = parse_ssh_result
+            result = await run_subprocess(
                 command,
                 cwd=self._settings.project_root,
                 timeout_seconds=timeout_seconds,
                 termination_grace_seconds=self._settings.termination_grace_seconds,
-                known_secrets=(
-                    self._settings.postgres_password.get_secret_value(),
-                    self._settings.redis_password.get_secret_value(),
-                    self._settings.portainer_token.get_secret_value(),
-                    self._settings.ansible_vault_password.get_secret_value(),
-                ),
+                known_secrets=collect_known_secrets(self._settings, job),
             )
-            return parse_ansible_result(result)
-        if not job.portainer_environment_id:
-            raise ActionConfigurationError("Service lacks portainer_environment_id")
-        client = self._portainer_client or PortainerClient(self._settings)
-        return await client.execute(
-            action,
-            job.portainer_environment_id,
-            job.service_container_selectors,
-            job.service_portainer_stack_name,
-        )
+        return parse(result)
+
+    async def _execute_portainer(
+        self, action: ResolvedPortainerAction, job: AutomationJob
+    ) -> ExecutionResult:
+        runtime = job.runtime or {}
+        environment_id = runtime.get("environment_id")
+        if not environment_id:
+            raise ActionConfigurationError("Service declares no Portainer runtime")
+        client = self._portainer_client or PortainerClient.from_job(job, self._settings)
+        return await client.execute(action, str(environment_id), runtime, runtime.get("stack_name"))
+
+    def _ssh_commands(self, job: AutomationJob) -> dict[str, SshCommand] | None:
+        if job.action_type != "ssh":
+            return None
+        try:
+            return load_ssh_commands(self._settings.ssh_commands_path)
+        except SshCommandsError as exc:
+            raise ActionConfigurationError(f"SSH command allow-list is invalid: {exc}") from exc
 
 
 def safe_result_data(result: ExecutionResult) -> dict[str, Any]:

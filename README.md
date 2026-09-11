@@ -64,7 +64,7 @@ flowchart LR
    ```bash
    cd /home/user/workspace/capataz
    cp .env.example .env
-   mkdir -p secrets
+   mkdir -p secrets resources
    ```
 
 2. Create local secrets. Don't add them to Git or paste them into `.env`:
@@ -72,11 +72,9 @@ flowchart LR
    ```bash
    openssl rand -base64 36 > secrets/postgres_password
    openssl rand -base64 36 > secrets/redis_password
-   echo 'REPLACE_WITH_LEAST_PRIVILEGE_PORTAINER_TOKEN' > secrets/portainer_token
    echo 'REPLACE_ONLY_IF_USING_COGNITO' > secrets/cognito_client_secret
-   echo 'REPLACE_WITH_AUTOMATION_ACCOUNT_SSH_KEY' > secrets/runner_ssh_private_key
-   echo 'host.example ssh-ed25519 AAAA...' > secrets/runner_known_hosts
-   openssl rand -base64 36 > secrets/ansible_vault_password
+   # Fernet master key that encrypts the catalog resources (tokens, SSH keys...). Back it up.
+   python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())' > secrets/resources_master_key
    # 644, not 600: Compose bind-mounts these files preserving permissions, and the
    # containers run as the `capataz` user (uid 10001), not as your host user.
    chmod 644 secrets/*
@@ -93,7 +91,7 @@ flowchart LR
    unset pg_pw redis_pw
    ```
 
-   If you change `CAPATAZ_POSTGRES_DB`/`CAPATAZ_POSTGRES_USER` in `.env`, also update the user and database in `secrets/database_url` to match. Replace the placeholders before enabling real integrations. The SSH key should belong to a limited technical account, never your personal user. For a first test without Cognito, keep `CAPATAZ_ENV=development` and `CAPATAZ_AUTH_MODE=dev_mock`. To generate `portainer_token`, see [Portainer Token in
+   If you change `CAPATAZ_POSTGRES_DB`/`CAPATAZ_POSTGRES_USER` in `.env`, also update the user and database in `secrets/database_url` to match. Integration credentials (Portainer token, SSH key, `known_hosts`, Vault password) are not files under `secrets/`: they are catalog resources, encrypted with `resources_master_key` — upload them in **Catalog → Resources**, or place them under `resources/` for the catalog's `{file: ...}` sources (see [Resources and the Master Key](docs/07-operations.en.md#resources-and-the-master-key)). The SSH key should belong to a limited technical account, never your personal user. For a first test without Cognito, keep `CAPATAZ_ENV=development` and `CAPATAZ_AUTH_MODE=dev_mock`. To generate the Portainer token, see [Portainer Token in
    docs/07-operations.en.md](docs/07-operations.en.md#portainer-token).
 
 3. Build and bring up the stack:

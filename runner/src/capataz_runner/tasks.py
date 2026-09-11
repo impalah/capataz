@@ -4,16 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import traceback
-from collections.abc import Callable
 
 from celery import Task
 from celery.utils.log import get_task_logger
-from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from capataz_runner.actions import ActionConfigurationError
 from capataz_runner.celery_app import app
 from capataz_runner.config import Settings
+from capataz_runner.crypto import ResourceDecryptionError, ResourceDecryptor
 from capataz_runner.database import (
     append_event,
     claim_execution,
@@ -21,32 +20,40 @@ from capataz_runner.database import (
     mark_execution_terminal,
     reap_stuck_executions,
 )
-from capataz_runner.executor import PersistentWorkerAutomationExecutor, safe_result_data
-from capataz_runner.models import ActionDefinitionRecord, ExecutionRecord, ServiceRecord
+from capataz_runner.executor import (
+    PersistentWorkerAutomationExecutor,
+    collect_known_secrets,
+    safe_result_data,
+)
+from capataz_runner.models import (
+    ActionDefinitionRecord,
+    ConnectorRecord,
+    ExecutionRecord,
+    ResourceRecord,
+    ServiceRecord,
+)
 from capataz_runner.ports import AutomationJob, ExecutionResult
 from capataz_runner.sanitization import sanitize_text
 
 logger = get_task_logger(__name__)
 
+# Which connector config fields reference an encrypted resource, per connector type that can run
+# actions. Mirrors the API's domain.specs.connectors RESOURCE_FIELDS.
+RESOURCE_FIELDS: dict[str, tuple[str, ...]] = {
+    "portainer": ("token",),
+    "ansible": ("private_key", "known_hosts", "vault_password"),
+    "ssh": ("private_key", "known_hosts"),
+}
 
-def _known_secrets(settings: Settings) -> tuple[str, ...]:
+
+def _known_secrets(settings: Settings, job: AutomationJob | None = None) -> tuple[str, ...]:
     """Best-effort collection of secret values to redact from an unexpected-exception traceback."""
-    secrets: list[str] = []
-    getters: tuple[Callable[[], SecretStr], ...] = (
-        lambda: settings.postgres_password,
-        lambda: settings.redis_password,
-        lambda: settings.portainer_token,
-        lambda: settings.ansible_vault_password,
-    )
-    for getter in getters:
-        try:
-            secrets.append(getter().get_secret_value())
-        except Exception:
-            continue
-    return tuple(secrets)
+    return collect_known_secrets(settings, job)
 
 
-async def _load_job(session: AsyncSession, execution_id: str) -> AutomationJob:
+async def _load_job(
+    session: AsyncSession, execution_id: str, decryptor: ResourceDecryptor
+) -> AutomationJob:
     execution = await session.get(ExecutionRecord, execution_id)
     if execution is None:
         raise ActionConfigurationError("Execution does not exist")
@@ -56,14 +63,34 @@ async def _load_job(session: AsyncSession, execution_id: str) -> AutomationJob:
         raise ActionConfigurationError("Execution references an invalid service or action")
     if not action.enabled:
         raise ActionConfigurationError("Action is disabled")
+    connector = await session.get(ConnectorRecord, action.connector_id)
+    if connector is None:
+        raise ActionConfigurationError("Action references a connector that no longer exists")
+    if connector.type != action.action_type:
+        raise ActionConfigurationError("Action type does not match its connector type")
+    config = dict(connector.config or {})
+    secrets: dict[str, bytes] = {}
+    for field_name in RESOURCE_FIELDS.get(connector.type, ()):
+        resource_id = config.get(field_name)
+        if resource_id is None:
+            continue
+        resource = await session.get(ResourceRecord, resource_id)
+        if resource is None:
+            raise ActionConfigurationError(
+                f"Resource {resource_id!r} referenced by the connector does not exist"
+            )
+        try:
+            secrets[field_name] = decryptor.decrypt(resource.ciphertext)
+        except ResourceDecryptionError as exc:
+            raise ActionConfigurationError(str(exc)) from exc
     return AutomationJob(
         execution_id=execution.id,
         service_id=service.id,
         action_type=action.action_type,
         action_config=action.config,
-        service_container_selectors=service.container_selectors,
-        portainer_environment_id=service.portainer_environment_id,
-        service_portainer_stack_name=service.portainer_stack_name,
+        connector_config=config,
+        runtime=(service.spec or {}).get("runtime"),
+        secrets=secrets,
         params=execution.params,
     )
 
@@ -82,9 +109,12 @@ async def process_execution_async(
     if not claimed:
         return "not_claimed"
 
+    job: AutomationJob | None = None
     try:
         async with session_factory() as session:
-            job = await _load_job(session, execution_id)
+            job = await _load_job(
+                session, execution_id, ResourceDecryptor(settings.resources_master_keys)
+            )
             await append_event(
                 session,
                 execution_id=execution_id,
@@ -98,7 +128,7 @@ async def process_execution_async(
         result = ExecutionResult(
             "rejected", "Action configuration was rejected", error_code="action_rejected"
         )
-        error_message = sanitize_text(str(exc))
+        error_message = sanitize_text(str(exc), _known_secrets(settings, job))
         event_type = "execution_rejected"
         logger.warning("Execution %s rejected: %s", execution_id, error_message)
     except TimeoutError:
@@ -117,12 +147,12 @@ async def process_execution_async(
         error_message = result.summary
         event_type = "execution_failed"
         # Sanitize the traceback (not just str(exc)) before logging: an unexpected DB/connection
-        # error can otherwise echo the DSN (which embeds the DB password) into application logs.
-        known_secrets = _known_secrets(settings)
+        # error can otherwise echo the DSN (which embeds the DB password) — or a decrypted
+        # resource — into application logs.
         logger.error(
             "Execution %s failed unexpectedly: %s",
             execution_id,
-            sanitize_text(traceback.format_exc(), known_secrets),
+            sanitize_text(traceback.format_exc(), _known_secrets(settings, job)),
         )
     else:
         error_message = result.summary

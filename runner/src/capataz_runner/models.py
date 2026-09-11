@@ -5,7 +5,18 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, Uuid, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    Uuid,
+    func,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -18,9 +29,25 @@ class ServiceRecord(Base):
 
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
-    portainer_environment_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    portainer_stack_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    container_selectors: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    # The API's domain.specs.ServiceSpec; the runner only reads its `runtime` block.
+    spec: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class ConnectorRecord(Base):
+    __tablename__ = "connectors"
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    type: Mapped[str] = mapped_column(String(32))
+    config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class ResourceRecord(Base):
+    __tablename__ = "resources"
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    type: Mapped[str] = mapped_column(String(32))
+    # Fernet token written by the API; decrypted only in memory right before an execution.
+    ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
 
 
 class ActionDefinitionRecord(Base):
@@ -29,6 +56,7 @@ class ActionDefinitionRecord(Base):
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
     service_id: Mapped[str] = mapped_column(ForeignKey("services.id"), index=True)
     key: Mapped[str] = mapped_column(String(128))
+    connector_id: Mapped[str] = mapped_column(ForeignKey("connectors.id"), index=True)
     action_type: Mapped[str] = mapped_column(String(32))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)

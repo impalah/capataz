@@ -27,6 +27,7 @@ COPY --from=builder /app/.venv /app/.venv
 COPY --chown=capataz:capataz src /app/src
 COPY --chown=capataz:capataz playbooks /app/playbooks
 COPY --chown=capataz:capataz inventories /app/inventories
+COPY --chown=capataz:capataz ssh_commands.yml /app/ssh_commands.yml
 ENV PATH="/app/.venv/bin:$PATH" PYTHONPATH="/app/src" CAPATAZ_PROJECT_ROOT=/app PYTHONDONTWRITEBYTECODE=1
 USER capataz
 # -B embeds the beat scheduler (only the reap-stuck-executions periodic task, see celery_app.py)

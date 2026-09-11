@@ -63,9 +63,9 @@ const { pending, confirmOpen, requestAction, confirmPending } = useActionExecuti
             <div>
               <p class="eyebrow">
                 {{ services.selected.group_name }} · {{ services.selected.environment
-                }}<template v-if="services.selected.portainer_stack_name">
+                }}<template v-if="services.selected.runtime?.stack_name">
                   ·
-                  {{ t('pages.serviceDetail.stackLabel', { stack: services.selected.portainer_stack_name }) }}
+                  {{ t('pages.serviceDetail.stackLabel', { stack: services.selected.runtime.stack_name }) }}
                 </template>
               </p>
               <h1><q-icon :name="services.selected.icon ?? 'dns'" /> {{ services.selected.name }}</h1>

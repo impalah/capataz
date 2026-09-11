@@ -78,16 +78,25 @@ describe('capatazApi (thin request() wrappers)', () => {
     await api.deleteService('open-webui')
     expect(request).toHaveBeenCalledWith('/services/open-webui', { method: 'DELETE' })
 
-    await api.createAction('open-webui', { key: 'restart' })
+    const actionInput = {
+      key: 'restart',
+      label: 'Reiniciar',
+      connector: 'portainer',
+      risk_level: 'operate' as const,
+      requires_confirmation: false,
+      enabled: true,
+      config: { operation: 'restart', target: 'selected_containers' },
+    }
+    await api.createAction('open-webui', actionInput)
     expect(request).toHaveBeenCalledWith('/services/open-webui/actions', {
       method: 'POST',
-      body: JSON.stringify({ key: 'restart' }),
+      body: JSON.stringify(actionInput),
     })
 
-    await api.updateAction('open-webui', 'restart', { label: 'x' })
+    await api.updateAction('open-webui', 'restart', actionInput)
     expect(request).toHaveBeenCalledWith('/services/open-webui/actions/restart', {
       method: 'PATCH',
-      body: JSON.stringify({ label: 'x' }),
+      body: JSON.stringify(actionInput),
     })
 
     await api.deleteAction('open-webui', 'restart')
@@ -95,5 +104,45 @@ describe('capatazApi (thin request() wrappers)', () => {
 
     await api.exportCatalog()
     expect(request).toHaveBeenCalledWith('/catalog/export')
+  })
+
+  it('covers the connector and resource wrappers, sending expected_version as a query param', async () => {
+    const connector = { id: 'loki', type: 'loki' as const, config: { url: 'https://loki.home.arpa' } }
+    await api.connectors()
+    expect(request).toHaveBeenCalledWith('/connectors')
+
+    await api.createConnector(connector)
+    expect(request).toHaveBeenCalledWith('/connectors', { method: 'POST', body: JSON.stringify(connector) })
+
+    await api.updateConnector('loki', connector, 4)
+    expect(request).toHaveBeenCalledWith('/connectors/loki?expected_version=4', {
+      method: 'PUT',
+      body: JSON.stringify(connector),
+    })
+
+    await api.updateConnector('loki', connector)
+    expect(request).toHaveBeenCalledWith('/connectors/loki', {
+      method: 'PUT',
+      body: JSON.stringify(connector),
+    })
+
+    await api.deleteConnector('loki')
+    expect(request).toHaveBeenCalledWith('/connectors/loki', { method: 'DELETE' })
+
+    await api.resources()
+    expect(request).toHaveBeenCalledWith('/resources')
+
+    const resource = { id: 'token', type: 'secret' as const, content_base64: 'eA==' }
+    await api.createResource(resource)
+    expect(request).toHaveBeenCalledWith('/resources', { method: 'POST', body: JSON.stringify(resource) })
+
+    await api.replaceResourceContent('token', { content_base64: 'eQ==' })
+    expect(request).toHaveBeenCalledWith('/resources/token/content', {
+      method: 'PUT',
+      body: JSON.stringify({ content_base64: 'eQ==' }),
+    })
+
+    await api.deleteResource('token')
+    expect(request).toHaveBeenCalledWith('/resources/token', { method: 'DELETE' })
   })
 })

@@ -64,7 +64,7 @@ flowchart LR
    ```bash
    cd /home/user/workspace/capataz
    cp .env.example .env
-   mkdir -p secrets
+   mkdir -p secrets resources
    ```
 
 2. Crea secretos locales. No los añadas a Git ni los pegues en `.env`:
@@ -72,11 +72,9 @@ flowchart LR
    ```bash
    openssl rand -base64 36 > secrets/postgres_password
    openssl rand -base64 36 > secrets/redis_password
-   echo 'REEMPLAZAR_CON_TOKEN_DE_PORTAINER_DE_MINIMO_PRIVILEGIO' > secrets/portainer_token
    echo 'REEMPLAZAR_SOLO_SI_SE_USA_COGNITO' > secrets/cognito_client_secret
-   echo 'REEMPLAZAR_CON_CLAVE_SSH_DE_CUENTA_DE_AUTOMATIZACION' > secrets/runner_ssh_private_key
-   echo 'host.example ssh-ed25519 AAAA...' > secrets/runner_known_hosts
-   openssl rand -base64 36 > secrets/ansible_vault_password
+   # Clave maestra Fernet que cifra los recursos del catálogo (tokens, claves SSH...). Haz copia.
+   python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())' > secrets/resources_master_key
    # 644, no 600: Compose monta estos ficheros por bind-mount preservando permisos, y los
    # contenedores corren como el usuario `capataz` (uid 10001), no como tu usuario del host.
    chmod 644 secrets/*
@@ -93,7 +91,7 @@ flowchart LR
    unset pg_pw redis_pw
    ```
 
-   Si cambias `CAPATAZ_POSTGRES_DB`/`CAPATAZ_POSTGRES_USER` en `.env`, actualiza también el usuario y la base de datos en `secrets/database_url` para que coincidan. Sustituye los marcadores antes de activar integraciones reales. La clave SSH debe pertenecer a una cuenta técnica limitada, nunca a tu usuario personal. Para una primera prueba sin Cognito, mantén `CAPATAZ_ENV=development` y `CAPATAZ_AUTH_MODE=dev_mock`. Para generar `portainer_token`, ver [«Token de Portainer» en
+   Si cambias `CAPATAZ_POSTGRES_DB`/`CAPATAZ_POSTGRES_USER` en `.env`, actualiza también el usuario y la base de datos en `secrets/database_url` para que coincidan. Las credenciales de integración (token de Portainer, clave SSH, `known_hosts`, contraseña de Vault) no son ficheros de `secrets/`: son recursos del catálogo, cifrados con `resources_master_key` — súbelos en **Catálogo → Recursos**, o ponlos en `resources/` para los orígenes `{file: ...}` del catálogo (ver [«Recursos y clave maestra»](docs/07-operations.es.md#recursos-y-clave-maestra)). La clave SSH debe pertenecer a una cuenta técnica limitada, nunca a tu usuario personal. Para una primera prueba sin Cognito, mantén `CAPATAZ_ENV=development` y `CAPATAZ_AUTH_MODE=dev_mock`. Para generar el token de Portainer, ver [«Token de Portainer» en
    docs/07-operations.es.md](docs/07-operations.es.md#token-de-portainer).
 
 3. Construye y levanta el stack:

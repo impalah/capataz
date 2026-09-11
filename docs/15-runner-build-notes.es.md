@@ -10,6 +10,8 @@ La aplicación usa `Settings` de Pydantic con variables no sensibles `CAPATAZ_*`
 
 `CAPATAZ_SECRETS_DIR` existe únicamente como punto de inyección para tests; en el contenedor el valor por defecto es el montaje de Docker Secrets.
 
+> Actualización (2026-09, [ADR 008](adr/008-connectors-and-resources.es.md)): estas son notas de construcción fechadas, que se conservan como registro. El runner ya no lee `portainer_token`, `runner_ssh_private_key`, `runner_known_hosts` ni `ansible_vault_password` de `/run/secrets`: carga el conector de la acción y descifra sus recursos con `resources_master_key` (`crypto.py`), materializando el material de claves por ejecución en un directorio temporal privado. Además ejecuta acciones `ssh`, limitadas a los comandos de `ssh_commands.yml`.
+
 ## Decisiones de integración
 
 - **Modelos SQLAlchemy ligeros locales.** El API todavía no expone un paquete de modelos compartido en este checkout. El runner define mappings de solo acceso

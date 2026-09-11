@@ -1,11 +1,9 @@
 """Fast SQLite smoke coverage for repositories.py, kept at unit level per the project's
+"no directory exempted from unit coverage" policy (see [tool.coverage.run] in pyproject.toml).
 
-"no directory exempted from unit coverage" policy (see the comment on [tool.coverage.run] in
-pyproject.toml). The full correctness suite — including everything that depends on real foreign
--key/constraint enforcement, which SQLite does not provide by default — lives in
-tests/integration/test_repositories.py against a real Postgres. These tests only exercise logic
-that doesn't depend on that distinction: pagination, filtering, and the optimistic-concurrency
-compare-and-swap.
+Everything that depends on real foreign-key/constraint enforcement (which SQLite does not provide
+by default) lives in tests/integration/test_repositories.py against a real Postgres. These tests
+only exercise logic that doesn't depend on that distinction.
 """
 
 from __future__ import annotations
@@ -14,11 +12,12 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from fakes import make_action, make_service, runtime
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
-from capataz_api.domain.entities import ActionDefinition, Execution, Service
+from capataz_api.domain.entities import Execution
 from capataz_api.domain.exceptions import ConflictError
-from capataz_api.domain.value_objects import ActionType, ExecutionSource, RiskLevel
+from capataz_api.domain.value_objects import ExecutionSource
 from capataz_api.infrastructure.database.models import Base
 from capataz_api.infrastructure.database.repositories import SqlAlchemyRepository
 
@@ -37,9 +36,7 @@ async def test_list_services_paginates_and_filters_by_status_cache(tmp_path: Pat
     async with factory() as session:
         repo = SqlAlchemyRepository(session)
         for index in range(5):
-            await repo.upsert_service(
-                Service(id=f"svc-{index}", name=f"Name {index}", group_name="G", environment="dev")
-            )
+            await repo.upsert_service(make_service(f"svc-{index}", name=f"Name {index}"))
             await repo.update_status_cache(f"svc-{index}", "healthy" if index < 3 else "down")
         await session.commit()
 
@@ -58,31 +55,53 @@ async def test_list_services_paginates_and_filters_by_status_cache(tmp_path: Pat
 
 
 @pytest.mark.asyncio
+async def test_service_spec_round_trips_and_metadata_is_sanitized(tmp_path: Path) -> None:
+    engine = await _empty_engine(tmp_path)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    original = make_service(
+        "one",
+        tags=["local"],
+        runtime=runtime(kind="services", names=("one",), stack_name="stack"),
+        observability={"metrics": [{"label": "CPU", "connector": "prometheus", "query": "up"}]},
+        metadata={"owner": "ana", "api_token": "leaked"},
+    )
+    async with factory() as session:
+        await SqlAlchemyRepository(session).upsert_service(original)
+        await session.commit()
+
+    async with factory() as session:
+        loaded = await SqlAlchemyRepository(session).get_service("one")
+    assert loaded is not None
+    assert loaded.spec.runtime == original.spec.runtime
+    assert loaded.spec.observability == original.spec.observability
+    assert loaded.spec.tags == ["local"]
+    assert loaded.spec.metadata == {"owner": "ana", "api_token": "[REDACTED]"}
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_upsert_service_raises_conflict_on_stale_version(tmp_path: Path) -> None:
     """CR-034: two concurrent readers of the same row must not silently overwrite one another."""
     engine = await _empty_engine(tmp_path)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
-        repo = SqlAlchemyRepository(session)
-        await repo.upsert_service(
-            Service(id="one", name="Original", group_name="G", environment="dev")
-        )
+        await SqlAlchemyRepository(session).upsert_service(make_service("one", name="Original"))
         await session.commit()
 
     async with factory() as first_session, factory() as second_session:
         first_repo = SqlAlchemyRepository(first_session)
         second_repo = SqlAlchemyRepository(second_session)
-        first_service = await first_repo.get_service("one")
-        second_service = await second_repo.get_service("one")
-        assert first_service is not None and second_service is not None
+        first = await first_repo.get_service("one")
+        second = await second_repo.get_service("one")
+        assert first is not None and second is not None
 
-        first_service.name = "Updated by first writer"
-        await first_repo.upsert_service(first_service, enforce_version=True)
+        first.spec = first.spec.model_copy(update={"name": "Updated by first writer"})
+        await first_repo.upsert_service(first, enforce_version=True)
         await first_session.commit()
 
-        second_service.name = "Updated by second writer (stale)"
+        second.spec = second.spec.model_copy(update={"name": "Stale second writer"})
         with pytest.raises(ConflictError):
-            await second_repo.upsert_service(second_service, enforce_version=True)
+            await second_repo.upsert_service(second, enforce_version=True)
     await engine.dispose()
 
 
@@ -92,75 +111,55 @@ async def test_list_services_filters_by_group_name_and_environment(tmp_path: Pat
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         repo = SqlAlchemyRepository(session)
-        await repo.upsert_service(
-            Service(id="ai-one", name="AI One", group_name="AI", environment="homelab")
-        )
-        await repo.upsert_service(
-            Service(id="infra-one", name="Infra One", group_name="Infra", environment="homelab")
-        )
+        await repo.upsert_service(make_service("ai-one", group_name="AI"))
+        await repo.upsert_service(make_service("infra-one", group_name="Infra"))
         await session.commit()
 
     async with factory() as session:
-        repo = SqlAlchemyRepository(session)
-        by_group, group_total = await repo.list_services(group_name="AI")
+        by_group, group_total = await SqlAlchemyRepository(session).list_services(group_name="AI")
     assert group_total == 1
     assert by_group[0].id == "ai-one"
     await engine.dispose()
 
 
 @pytest.mark.asyncio
-async def test_action_crud_and_batched_list_actions_for_services(tmp_path: Path) -> None:
+async def test_action_crud_batched_listing_and_listing_by_connector(tmp_path: Path) -> None:
     """CR-080: list_actions_for_services must batch across services in one query."""
     engine = await _empty_engine(tmp_path)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         repo = SqlAlchemyRepository(session)
-        await repo.upsert_service(Service(id="one", name="One", group_name="G", environment="dev"))
-        await repo.upsert_service(Service(id="two", name="Two", group_name="G", environment="dev"))
-        await repo.upsert_action(
-            ActionDefinition(
-                service_id="one",
-                key="restart",
-                label="Restart",
-                action_type=ActionType.PORTAINER,
-                risk_level=RiskLevel.OPERATE,
-                config={"operation": "restart", "target": "selected_containers"},
-            )
-        )
+        await repo.upsert_service(make_service("one"))
+        await repo.upsert_service(make_service("two"))
+        await repo.upsert_action(make_action("one"))
         await session.commit()
 
     async with factory() as session:
         repo = SqlAlchemyRepository(session)
         by_service = await repo.list_actions_for_services(["one", "two", "missing"])
         assert [action.key for action in by_service["one"]] == ["restart"]
-        assert by_service["two"] == []
-        assert by_service["missing"] == []
+        assert by_service["two"] == by_service["missing"] == []
+        assert (await repo.get_action("one", "restart")).connector_id == "portainer_main"  # type: ignore[union-attr]
+        assert [a.key for a in await repo.list_actions_by_connector("portainer_main")] == [
+            "restart"
+        ]
+        assert await repo.list_actions_by_connector("other") == []
 
         assert await repo.delete_action("one", "restart") is True
         assert await repo.delete_action("one", "restart") is False
-        assert await repo.get_action("one", "restart") is None
     await engine.dispose()
 
 
 @pytest.mark.asyncio
 async def test_delete_action_blocks_while_an_execution_is_active(tmp_path: Path) -> None:
-    """CR-077: delete_action's active-execution precheck (previously absent entirely)."""
+    """CR-077: delete_action's active-execution precheck."""
     engine = await _empty_engine(tmp_path)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     action_id = uuid4()
     async with factory() as session:
         repo = SqlAlchemyRepository(session)
-        await repo.upsert_service(Service(id="one", name="One", group_name="G", environment="dev"))
-        action = ActionDefinition(
-            id=action_id,
-            service_id="one",
-            key="restart",
-            label="Restart",
-            action_type=ActionType.PORTAINER,
-            risk_level=RiskLevel.OPERATE,
-            config={"operation": "restart", "target": "selected_containers"},
-        )
-        await repo.upsert_action(action)
+        await repo.upsert_service(make_service("one"))
+        await repo.upsert_action(make_action("one", id=action_id))
         await repo.create_execution(
             Execution(
                 service_id="one",
@@ -175,6 +174,5 @@ async def test_delete_action_blocks_while_an_execution_is_active(tmp_path: Path)
         await session.commit()
 
     async with factory() as session:
-        repo = SqlAlchemyRepository(session)
-        assert await repo.delete_action("one", "restart") is False
+        assert await SqlAlchemyRepository(session).delete_action("one", "restart") is False
     await engine.dispose()

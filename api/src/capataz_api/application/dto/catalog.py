@@ -1,152 +1,52 @@
-from typing import Any, Literal
+"""Catalog v2 document shape (docs/05-yaml-catalog): resources, connectors and services.
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
+Structure and intra-document uniqueness are checked here; references to connectors/resources
+that may also live only in the database are checked by the importer (application/services).
+"""
 
-from capataz_api.domain.value_objects import ActionType, RiskLevel
+from typing import Literal
 
+from pydantic import Field, model_validator
 
-class ContainerCatalog(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    name: str
-    required: bool = True
-    critical: bool = False
-
-
-class ServiceSelectorCatalog(BaseModel):
-    """A Docker Swarm service, matched by ``{stack_name}_{name}`` (Docker's own naming), not by
-
-    a container name — Swarm mangles container names per-task/replica, so exact container-name
-    matching (as used for ``ContainerCatalog``) never matches a Swarm-deployed service.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-    name: str
-    replicas: int = Field(default=1, ge=0, le=50)
-    required: bool = True
-    critical: bool = False
+from capataz_api.domain.specs import (
+    SERVICE_ID_PATTERN,
+    ActionSpec,
+    ConnectorSpec,
+    ResourceSpec,
+    ServiceSpec,
+    SpecModel,
+)
 
 
-class PortainerCatalog(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    environment_id: str | int
-    stack_name: str | None = None
-    aggregation: Literal["all_required", "any_healthy"] = "all_required"
-    containers: list[ContainerCatalog] | None = None
-    services: list[ServiceSelectorCatalog] | None = None
+class ServiceDefinition(ServiceSpec):
+    id: str = Field(pattern=SERVICE_ID_PATTERN, max_length=128)
+    actions: list[ActionSpec] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def exactly_one_selector_kind(self) -> PortainerCatalog:
-        if bool(self.containers) == bool(self.services):
-            raise ValueError("portainer requires exactly one of containers or services")
+    def unique_action_keys(self) -> ServiceDefinition:
+        keys = [action.key for action in self.actions]
+        if len(keys) != len(set(keys)):
+            raise ValueError(f"action keys must be unique for {self.id}")
         return self
 
-
-class HealthCatalog(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    type: Literal["http", "tcp"]
-    url: HttpUrl
-    expected_status: int = Field(default=200, ge=100, le=599)
-    timeout_seconds: int = Field(default=5, ge=1, le=60)
+    def to_spec(self) -> ServiceSpec:
+        return ServiceSpec.model_validate(self.model_dump(exclude={"id", "actions"}))
 
 
-class MetricDefinitionCatalog(BaseModel):
-    """A single admin-authored metric shown on the service card. `query` is full PromQL text —
-
-    this is trusted operator config, never client input: only capataz-admin can write/edit the
-    catalog (same trust level as `HealthCatalog.url` or an Ansible playbook path), and it is
-    queried read-only against Prometheus with a bounded timeout. See docs/06-security.md.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-    label: str = Field(min_length=1, max_length=100)
-    type: Literal["prometheus"] = "prometheus"
-    query: str = Field(min_length=1, max_length=2000)
-
-
-class ActionCatalog(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    key: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")
-    label: str
-    description: str | None = None
-    icon: str | None = None
-    action_type: ActionType
-    risk_level: RiskLevel
-    requires_confirmation: bool = False
-    enabled: bool = True
-    unattended: bool = False
-    config: dict[str, Any]
-    allowed_parameters_schema: dict[str, Any] = Field(default_factory=dict)
+class Catalog(SpecModel):
+    version: Literal[2]
+    resources: list[ResourceSpec] = Field(default_factory=list)
+    connectors: list[ConnectorSpec] = Field(default_factory=list)
+    services: list[ServiceDefinition] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def validate_config(self) -> ActionCatalog:
-        if "command" in self.config:
-            raise ValueError("command is never permitted")
-        if self.action_type == ActionType.PORTAINER and (
-            set(self.config) != {"operation", "target"}
-            or self.config.get("operation") not in {"start", "stop", "restart", "logs"}
-            or self.config.get("target") not in {"selected_containers", "selected_services"}
+    def unique_ids(self) -> Catalog:
+        for kind, ids in (
+            ("resource", [item.id for item in self.resources]),
+            ("connector", [item.id for item in self.connectors]),
+            ("service", [item.id for item in self.services]),
         ):
-            raise ValueError(
-                "Portainer config requires exactly an allowed operation and "
-                "a selected_containers/selected_services target"
-            )
-        if self.action_type == ActionType.ANSIBLE:
-            for key in ("playbook", "inventory"):
-                path = str(self.config.get(key, ""))
-                prefix = "playbooks/" if key == "playbook" else "inventories/"
-                if not path.startswith(prefix) or ".." in path:
-                    raise ValueError(f"{key} must be an allow-listed relative path")
-        return self
-
-
-class ServiceCatalog(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")
-    name: str
-    description: str | None = None
-    group_name: str
-    environment: str
-    icon: str | None = None
-    service_url: HttpUrl | None = None
-    documentation_url: HttpUrl | None = None
-    portainer: PortainerCatalog | None = None
-    health: HealthCatalog | None = None
-    grafana: dict[str, Any] = Field(default_factory=dict)
-    loki: dict[str, Any] = Field(default_factory=dict)
-    metrics: list[MetricDefinitionCatalog] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    maintenance: bool = False
-    actions: list[ActionCatalog] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def portainer_action_targets_match_selector_kind(self) -> ServiceCatalog:
-        if not self.portainer:
-            return self
-        expected = "selected_services" if self.portainer.services else "selected_containers"
-        for action in self.actions:
-            if (
-                action.action_type == ActionType.PORTAINER
-                and action.config.get("target") != expected
-            ):
-                raise ValueError(
-                    f"action '{action.key}' targets {action.config.get('target')} but "
-                    f"portainer declares {'services' if self.portainer.services else 'containers'}"
-                )
-        return self
-
-
-class Catalog(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    version: Literal[1]
-    services: list[ServiceCatalog]
-
-    @model_validator(mode="after")
-    def unique_services_and_actions(self) -> Catalog:
-        ids = [item.id for item in self.services]
-        if len(ids) != len(set(ids)):
-            raise ValueError("service ids must be unique")
-        for service in self.services:
-            keys = [item.key for item in service.actions]
-            if len(keys) != len(set(keys)):
-                raise ValueError(f"action keys must be unique for {service.id}")
+            duplicates = sorted({item for item in ids if ids.count(item) > 1})
+            if duplicates:
+                raise ValueError(f"duplicate {kind} ids: {', '.join(duplicates)}")
         return self

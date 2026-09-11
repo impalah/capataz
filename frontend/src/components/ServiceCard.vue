@@ -50,6 +50,11 @@ const cardStateClass = computed(() => {
         <span class="card-icon"><q-icon :name="service.icon ?? 'dns'" size="28px" /></span>
         <h2>{{ service.name }}</h2>
       </div>
+      <div v-if="service.tags?.length" class="card-row-tags">
+        <q-chip v-for="tag in service.tags" :key="tag" dense outline size="sm" class="card-tag">{{
+          tag
+        }}</q-chip>
+      </div>
       <div v-if="metrics.length" class="card-row-metrics">
         <div v-for="metric in metrics" :key="metric.label" class="metric-cell">
           <span class="metric-label">{{ metric.label }}</span>

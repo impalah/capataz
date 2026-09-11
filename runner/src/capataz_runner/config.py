@@ -9,6 +9,8 @@ from urllib.parse import unquote, urlsplit
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from capataz_runner.crypto import parse_master_keys
+
 
 class SecretNotFoundError(RuntimeError):
     """Raised when a required Docker secret is not mounted."""
@@ -36,7 +38,6 @@ class Settings(BaseSettings):
     log_json: bool = False
     celery_queue: str = "automation"
     celery_concurrency: int = 2
-    portainer_url: str = "https://portainer.404labo.net"
     http_timeout_seconds: float = 5.0
     # actions.py allow-lists action.timeout_seconds in [1, 900]; these three defaults keep enough
     # margin above that real max (a shipped example action already uses 600s) so that neither the
@@ -99,34 +100,16 @@ class Settings(BaseSettings):
             )
         return self
 
-    @cached_property
-    def portainer_token(self) -> SecretStr:
-        return read_secret("portainer_token", self.secrets_dir)
+    @property
+    def ssh_commands_path(self) -> Path:
+        """The SSH command allow-list, versioned in the repo next to playbooks/ and inventories/."""
+        return self.project_root / "ssh_commands.yml"
 
     @cached_property
-    def runner_ssh_private_key_path(self) -> Path:
-        path = self.secrets_dir / "runner_ssh_private_key"
-        if not path.is_file():
-            raise SecretNotFoundError(f"Required secret file is unavailable: {path}")
-        return path
-
-    @cached_property
-    def runner_known_hosts_path(self) -> Path:
-        path = self.secrets_dir / "runner_known_hosts"
-        if not path.is_file():
-            raise SecretNotFoundError(f"Required secret file is unavailable: {path}")
-        return path
-
-    @cached_property
-    def ansible_vault_password(self) -> SecretStr:
-        return read_secret("ansible_vault_password", self.secrets_dir)
-
-    @cached_property
-    def ansible_vault_password_path(self) -> Path:
-        path = self.secrets_dir / "ansible_vault_password"
-        if not path.is_file():
-            raise SecretNotFoundError(f"Required secret file is unavailable: {path}")
-        return path
+    def resources_master_keys(self) -> tuple[str, ...]:
+        return parse_master_keys(
+            read_secret("resources_master_key", self.secrets_dir).get_secret_value()
+        )
 
     @cached_property
     def database_url(self) -> str:

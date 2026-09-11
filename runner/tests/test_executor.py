@@ -2,45 +2,186 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shlex
 import signal
+import stat
 from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
 
-from capataz_runner.actions import ResolvedPortainerAction, resolve_action
+from capataz_runner.actions import (
+    ActionConfigurationError,
+    ResolvedPortainerAction,
+    ResolvedSshAction,
+    resolve_action,
+)
 from capataz_runner.config import Settings
 from capataz_runner.executor import (
-    AnsibleProcessResult,
+    PersistentWorkerAutomationExecutor,
     PortainerClient,
+    ProcessResult,
     build_ansible_command,
+    build_ssh_command,
+    collect_known_secrets,
+    materialized_secrets,
     parse_ansible_result,
-    run_ansible_subprocess,
+    parse_ssh_result,
+    run_subprocess,
 )
+from capataz_runner.ports import AutomationJob, ExecutionResult
+
+RUNNER_ROOT = Path(__file__).resolve().parents[1]
+HOMELAB = {
+    "inventory": "inventories/homelab.yml",
+    "private_key": "k",
+    "known_hosts": "kh",
+    "vault_password": "v",
+}
+SSH_TARGET = {"host": "mole.home.arpa", "port": 22, "user": "capataz"}
+PORTAINER = {"url": "https://portainer.home.arpa", "token": "portainer_token", "verify_tls": True}
+CREDENTIALS = {
+    "private_key": Path("/secrets/private_key"),
+    "known_hosts": Path("/secrets/known_hosts"),
+    "vault_password": Path("/secrets/vault_password"),
+}
 
 
-def configured_settings(secrets_dir: Path) -> Settings:
-    return Settings(
-        secrets_dir=secrets_dir, project_root=Path("/home/user/workspace/capataz/runner")
+def configured_settings(secrets_dir: Path, **overrides: Any) -> Settings:
+    return Settings(secrets_dir=secrets_dir, project_root=RUNNER_ROOT, **overrides)
+
+
+def portainer_job(**overrides: Any) -> AutomationJob:
+    values: dict[str, Any] = {
+        "execution_id": "e",
+        "service_id": "open-webui",
+        "action_type": "portainer",
+        "action_config": {"operation": "restart", "target": "selected_containers"},
+        "connector_config": PORTAINER,
+        "runtime": {"environment_id": "3", "containers": [{"name": "open-webui"}]},
+        "secrets": {"token": b"portainer-super-secret\n"},
+    }
+    return AutomationJob(**{**values, **overrides})
+
+
+def mock_portainer(monkeypatch: pytest.MonkeyPatch, handler: Any) -> None:
+    transport = httpx.MockTransport(handler)
+    real_async_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        "capataz_runner.executor.httpx.AsyncClient",
+        lambda *args, **kwargs: real_async_client(*args, transport=transport, **kwargs),
     )
 
 
-def test_build_command_is_fixed_argument_vector(secrets_dir: Path) -> None:
+def _read_bytes(path: Path) -> bytes:
+    return path.read_bytes()
+
+
+# --- credentials ----------------------------------------------------------------------------
+
+
+def test_materialized_secrets_are_owner_only_and_removed_afterwards() -> None:
+    with materialized_secrets({"private_key": b"KEY", "vault_password": b"v"}) as paths:
+        directory = paths["private_key"].parent
+        assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+        for path in paths.values():
+            assert stat.S_IMODE(path.stat().st_mode) == 0o600
+        # OpenSSH needs a trailing newline on key files; the vault password is left untouched.
+        assert paths["private_key"].read_bytes() == b"KEY\n"
+        assert paths["vault_password"].read_bytes() == b"v"
+    assert not directory.exists()
+
+
+def test_materialized_secrets_are_removed_even_when_the_execution_raises() -> None:
+    with pytest.raises(RuntimeError), materialized_secrets({"known_hosts": b"kh\n"}) as paths:
+        directory = paths["known_hosts"].parent
+        raise RuntimeError
+    assert not directory.exists()
+
+
+def test_known_secrets_include_decrypted_resources_and_their_long_lines(secrets_dir: Path) -> None:
+    key = b"-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END-----\n"
+    job = portainer_job(secrets={"token": b"tok-123\n", "private_key": key})
+    secrets = collect_known_secrets(configured_settings(secrets_dir), job)
+    assert "postgres-super-secret" in secrets and "redis-super-secret" in secrets
+    assert "tok-123" in secrets
+    assert "b3BlbnNzaC1rZXktdjEAAAAA" in secrets
+    assert key.decode().strip() in secrets
+
+
+def test_known_secrets_is_empty_when_every_secret_is_unreadable(tmp_path: Path) -> None:
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+    assert collect_known_secrets(Settings(secrets_dir=empty_dir)) == ()
+
+
+# --- commands -------------------------------------------------------------------------------
+
+
+def test_build_ansible_command_is_a_fixed_argument_vector(secrets_dir: Path) -> None:
     action = resolve_action(
         "ansible",
         {
             "playbook": "playbooks/restart_service.yml",
-            "inventory": "inventories/homelab.yml",
             "limit": "node-ai-01",
             "extra_vars": {"service": "open-webui"},
         },
+        connector_config={**HOMELAB, "user": "deploy"},
     )
-    command = build_ansible_command(action, configured_settings(secrets_dir))
+    assert not isinstance(action, (ResolvedPortainerAction, ResolvedSshAction))
+    command = build_ansible_command(action, configured_settings(secrets_dir), CREDENTIALS)
     assert command[0] == "ansible-playbook"
-    assert ";" not in " ".join(command)
-    assert "shell" not in command
+    assert command[command.index("--inventory") + 1] == str(RUNNER_ROOT / "inventories/homelab.yml")
+    assert command[command.index("--private-key") + 1] == "/secrets/private_key"
+    assert (
+        "UserKnownHostsFile=/secrets/known_hosts" in command[command.index("--ssh-common-args") + 1]
+    )
+    assert command[command.index("--vault-password-file") + 1] == "/secrets/vault_password"
+    assert command[command.index("--user") + 1] == "deploy"
     assert "open-webui" in command[command.index("--extra-vars") + 1]
+    assert ";" not in " ".join(command)
+
+
+def test_build_ansible_command_requires_the_key_resources(secrets_dir: Path) -> None:
+    action = resolve_action(
+        "ansible",
+        {"playbook": "playbooks/restart_service.yml", "limit": "node-ai-01"},
+        connector_config=HOMELAB,
+    )
+    assert not isinstance(action, (ResolvedPortainerAction, ResolvedSshAction))
+    command = build_ansible_command(
+        action,
+        configured_settings(secrets_dir),
+        {"private_key": CREDENTIALS["private_key"], "known_hosts": CREDENTIALS["known_hosts"]},
+    )
+    assert "--vault-password-file" not in command
+    with pytest.raises(ActionConfigurationError, match="does not provide a known_hosts"):
+        build_ansible_command(action, configured_settings(secrets_dir), {})
+    with pytest.raises(ActionConfigurationError, match="does not provide a private_key"):
+        build_ansible_command(
+            action, configured_settings(secrets_dir), {"known_hosts": CREDENTIALS["known_hosts"]}
+        )
+
+
+def test_build_ssh_command_pins_host_keys_and_quotes_the_remote_argv() -> None:
+    action = ResolvedSshAction(
+        "disk_usage", ("df", "-h", "/srv/my data"), "mole.home.arpa", 2222, "capataz", 60
+    )
+    command = build_ssh_command(action, CREDENTIALS)
+    assert command[:3] == ("ssh", "-i", "/secrets/private_key")
+    for option in (
+        "BatchMode=yes",
+        "IdentitiesOnly=yes",
+        "StrictHostKeyChecking=yes",
+        "UserKnownHostsFile=/secrets/known_hosts",
+    ):
+        assert option in command
+    assert command[command.index("-p") + 1] == "2222"
+    assert command[command.index("-l") + 1] == "capataz"
+    # The host comes after "--", so it can never be parsed as an ssh option.
+    assert command[-3:-1] == ("--", "mole.home.arpa")
+    assert shlex.split(command[-1]) == ["df", "-h", "/srv/my data"]
 
 
 @pytest.mark.asyncio
@@ -57,7 +198,7 @@ async def test_subprocess_execution_never_requests_a_shell(monkeypatch: pytest.M
 
     class Process:
         returncode = 0
-        stdout = FakeStream(b"ok")
+        stdout = FakeStream(b"ok secret-value")
         stderr = FakeStream(b"")
 
         async def wait(self) -> None:
@@ -69,12 +210,14 @@ async def test_subprocess_execution_never_requests_a_shell(monkeypatch: pytest.M
         return Process()
 
     monkeypatch.setattr("capataz_runner.executor.asyncio.create_subprocess_exec", fake_exec)
-    result = await run_ansible_subprocess(
+    result = await run_subprocess(
         ("ansible-playbook", "playbooks/check_connectivity.yml"),
         cwd=Path("/tmp"),
         timeout_seconds=1,
+        known_secrets=("secret-value",),
     )
     assert result.returncode == 0
+    assert "secret-value" not in result.stdout
     assert captured["args"] == ("ansible-playbook", "playbooks/check_connectivity.yml")
     assert "shell" not in captured["kwargs"]
 
@@ -110,10 +253,10 @@ async def test_timeout_signals_the_process_group_and_falls_back_to_kill(
     monkeypatch.setattr("capataz_runner.executor.asyncio.create_subprocess_exec", fake_exec)
     monkeypatch.setattr("capataz_runner.executor.os.killpg", fake_killpg)
 
-    result = await run_ansible_subprocess(
+    result = await run_subprocess(
         ("ansible-playbook", "playbooks/check_connectivity.yml"),
         cwd=Path("/tmp"),
-        timeout_seconds=0.01,
+        timeout_seconds=0.01,  # type: ignore[arg-type]
         termination_grace_seconds=0.01,
     )
     assert result.timed_out is True
@@ -121,7 +264,7 @@ async def test_timeout_signals_the_process_group_and_falls_back_to_kill(
 
 
 @pytest.mark.asyncio
-async def test_run_ansible_subprocess_caps_captured_stream_size(
+async def test_run_subprocess_caps_captured_stream_size(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """CR-084: a subprocess dumping far more output than the cap must not grow the capture
@@ -153,7 +296,7 @@ async def test_run_ansible_subprocess_caps_captured_stream_size(
         return Process()
 
     monkeypatch.setattr("capataz_runner.executor.asyncio.create_subprocess_exec", fake_exec)
-    result = await run_ansible_subprocess(
+    result = await run_subprocess(
         ("ansible-playbook", "playbooks/check_connectivity.yml"),
         cwd=Path("/tmp"),
         timeout_seconds=1,
@@ -165,21 +308,29 @@ async def test_run_ansible_subprocess_caps_captured_stream_size(
 @pytest.mark.parametrize(
     ("process_result", "expected_status", "expected_code"),
     [
-        (AnsibleProcessResult(0, "ok", ""), "succeeded", None),
-        (AnsibleProcessResult(2, "", "failed"), "failed", "ansible_failed"),
-        (AnsibleProcessResult(-1, "", "", timed_out=True), "timed_out", "ansible_timeout"),
+        (ProcessResult(0, "ok", ""), "succeeded", None),
+        (ProcessResult(2, "", "failed"), "failed", "ansible_failed"),
+        (ProcessResult(-1, "", "", timed_out=True), "timed_out", "ansible_timeout"),
     ],
 )
 def test_parse_ansible_results(
-    process_result: AnsibleProcessResult, expected_status: str, expected_code: str | None
+    process_result: ProcessResult, expected_status: str, expected_code: str | None
 ) -> None:
     result = parse_ansible_result(process_result)
     assert result.status == expected_status
     assert result.error_code == expected_code
 
 
+def test_parse_ssh_results_use_their_own_error_codes() -> None:
+    assert parse_ssh_result(ProcessResult(255, "", "denied")).error_code == "ssh_failed"
+    assert parse_ssh_result(ProcessResult(-1, "", "", timed_out=True)).error_code == "ssh_timeout"
+    assert parse_ssh_result(ProcessResult(0, "up 3 days", "")).data == {"output": "up 3 days"}
+
+
+# --- selectors ------------------------------------------------------------------------------
+
+
 def test_container_resolution_requires_service_selectors() -> None:
-    from capataz_runner.actions import ActionConfigurationError
     from capataz_runner.executor import resolve_selected_container_ids
 
     containers = [
@@ -198,7 +349,6 @@ def test_container_resolution_requires_service_selectors() -> None:
 
 
 def test_service_resolution_requires_service_selectors() -> None:
-    from capataz_runner.actions import ActionConfigurationError
     from capataz_runner.executor import resolve_selected_services
 
     services = [
@@ -214,9 +364,52 @@ def test_service_resolution_requires_service_selectors() -> None:
         resolve_selected_services(services, {"services": [{"name": "no-match"}]}, "homelab-swarm")
 
 
+# --- Portainer ------------------------------------------------------------------------------
+
+
+def test_portainer_client_is_built_from_the_connector_and_its_token(secrets_dir: Path) -> None:
+    client = PortainerClient.from_job(portainer_job(), configured_settings(secrets_dir))
+    assert client._token == "portainer-super-secret"
+    assert client._base_url == "https://portainer.home.arpa"
+
+
+@pytest.mark.parametrize(
+    ("overrides", "match"),
+    [
+        ({"connector_config": {**PORTAINER, "url": "http://portainer.home.arpa"}}, "HTTPS"),
+        ({"secrets": {}}, "token"),
+        ({"secrets": {"token": b"\n"}}, "empty"),
+    ],
+)
+def test_portainer_client_rejects_plain_http_and_missing_tokens(
+    secrets_dir: Path, overrides: dict[str, Any], match: str
+) -> None:
+    with pytest.raises(ActionConfigurationError, match=match):
+        PortainerClient.from_job(portainer_job(**overrides), configured_settings(secrets_dir))
+
+
+@pytest.mark.asyncio
+async def test_portainer_client_sends_the_connector_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers.get("X-API-Key"))
+        if request.url.path.endswith("/json"):
+            return httpx.Response(200, json=[{"Id": "c1", "Names": ["/ollama"]}])
+        return httpx.Response(204)
+
+    mock_portainer(monkeypatch, handler)
+    client = PortainerClient("https://portainer.home.arpa/", "tok", 5.0)
+    result = await client.execute(
+        ResolvedPortainerAction(operation="restart"), "5", {"containers": [{"name": "ollama"}]}
+    )
+    assert result.status == "succeeded"
+    assert seen == ["tok", "tok"]
+
+
 @pytest.mark.asyncio
 async def test_portainer_client_force_updates_swarm_service_on_restart(
-    monkeypatch: pytest.MonkeyPatch, secrets_dir: Path
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """restart on a selected_services target must re-post the spec with ForceUpdate bumped."""
     update_calls: list[dict[str, Any]] = []
@@ -243,13 +436,8 @@ async def test_portainer_client_force_updates_swarm_service_on_restart(
             return httpx.Response(200, json={"Warnings": []})
         return httpx.Response(404)
 
-    transport = httpx.MockTransport(handler)
-    real_async_client = httpx.AsyncClient
-    monkeypatch.setattr(
-        "capataz_runner.executor.httpx.AsyncClient",
-        lambda *args, **kwargs: real_async_client(*args, transport=transport, **kwargs),
-    )
-    client = PortainerClient(configured_settings(secrets_dir))
+    mock_portainer(monkeypatch, handler)
+    client = PortainerClient("https://portainer.home.arpa", "tok", 5.0)
     result = await client.execute(
         ResolvedPortainerAction(operation="restart", target="selected_services"),
         "7",
@@ -265,7 +453,7 @@ async def test_portainer_client_force_updates_swarm_service_on_restart(
 
 @pytest.mark.asyncio
 async def test_portainer_client_scales_swarm_service_on_stop(
-    monkeypatch: pytest.MonkeyPatch, secrets_dir: Path
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """stop on a selected_services target must scale replicas to 0, not remove the service."""
     update_calls: list[dict[str, Any]] = []
@@ -292,13 +480,8 @@ async def test_portainer_client_scales_swarm_service_on_stop(
             return httpx.Response(200, json={"Warnings": []})
         return httpx.Response(404)
 
-    transport = httpx.MockTransport(handler)
-    real_async_client = httpx.AsyncClient
-    monkeypatch.setattr(
-        "capataz_runner.executor.httpx.AsyncClient",
-        lambda *args, **kwargs: real_async_client(*args, transport=transport, **kwargs),
-    )
-    client = PortainerClient(configured_settings(secrets_dir))
+    mock_portainer(monkeypatch, handler)
+    client = PortainerClient("https://portainer.home.arpa", "tok", 5.0)
     result = await client.execute(
         ResolvedPortainerAction(operation="stop", target="selected_services"),
         "7",
@@ -310,91 +493,8 @@ async def test_portainer_client_scales_swarm_service_on_stop(
 
 
 @pytest.mark.asyncio
-async def test_execution_timeout_is_capped_by_settings_ceiling(
-    monkeypatch: pytest.MonkeyPatch, secrets_dir: Path
-) -> None:
-    """settings.execution_timeout_seconds caps action.timeout_seconds, never extends it."""
-    from capataz_runner.executor import PersistentWorkerAutomationExecutor
-    from capataz_runner.ports import AutomationJob
-
-    captured: dict[str, Any] = {}
-
-    async def fake_run_ansible_subprocess(
-        command: object, *, cwd: object, timeout_seconds: int, **kwargs: object
-    ) -> AnsibleProcessResult:
-        captured["timeout_seconds"] = timeout_seconds
-        return AnsibleProcessResult(0, "ok", "")
-
-    monkeypatch.setattr(
-        "capataz_runner.executor.run_ansible_subprocess", fake_run_ansible_subprocess
-    )
-    settings = Settings(
-        secrets_dir=secrets_dir,
-        project_root=Path("/home/user/workspace/capataz/runner"),
-        execution_timeout_seconds=120,
-    )
-    job = AutomationJob(
-        execution_id="e",
-        service_id="open-webui",
-        action_type="ansible",
-        action_config={
-            "playbook": "playbooks/backup_service.yml",
-            "inventory": "inventories/homelab.yml",
-            "limit": "node-ai-01",
-            "timeout_seconds": 600,
-        },
-        service_container_selectors={},
-        portainer_environment_id=None,
-    )
-    executor = PersistentWorkerAutomationExecutor(settings)
-    result = await executor.execute(job)
-    assert result.status == "succeeded"
-    assert captured["timeout_seconds"] == 120
-
-
-@pytest.mark.asyncio
-async def test_persistent_executor_uses_portainer_only_for_selected_containers(
-    secrets_dir: Path,
-) -> None:
-    from capataz_runner.executor import PersistentWorkerAutomationExecutor
-    from capataz_runner.ports import AutomationJob, ExecutionResult
-
-    selectors = {
-        "containers": [{"name": "open-webui", "required": True}],
-        "aggregation": "all_required",
-    }
-
-    class FakePortainer:
-        async def execute(
-            self,
-            operation: object,
-            environment_id: str,
-            selectors: object,
-            stack_name: object = None,
-        ) -> ExecutionResult:
-            assert environment_id == "3"
-            assert selectors == {
-                "containers": [{"name": "open-webui", "required": True}],
-                "aggregation": "all_required",
-            }
-            return ExecutionResult("succeeded", "selected only", {"containers": 1})
-
-    job = AutomationJob(
-        execution_id="e",
-        service_id="open-webui",
-        action_type="portainer",
-        action_config={"operation": "restart", "target": "selected_containers"},
-        service_container_selectors=selectors,
-        portainer_environment_id="3",
-    )
-    executor = PersistentWorkerAutomationExecutor(configured_settings(secrets_dir), FakePortainer())  # type: ignore[arg-type]
-    result = await executor.execute(job)
-    assert result.status == "succeeded"
-
-
-@pytest.mark.asyncio
 async def test_portainer_client_treats_304_as_already_in_desired_state(
-    monkeypatch: pytest.MonkeyPatch, secrets_dir: Path
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Docker reuses 304 to mean "already started/stopped"; it must not be treated as an error."""
 
@@ -405,13 +505,8 @@ async def test_portainer_client_treats_304_as_already_in_desired_state(
             return httpx.Response(304)
         return httpx.Response(404)
 
-    transport = httpx.MockTransport(handler)
-    real_async_client = httpx.AsyncClient
-    monkeypatch.setattr(
-        "capataz_runner.executor.httpx.AsyncClient",
-        lambda *args, **kwargs: real_async_client(*args, transport=transport, **kwargs),
-    )
-    client = PortainerClient(configured_settings(secrets_dir))
+    mock_portainer(monkeypatch, handler)
+    client = PortainerClient("https://portainer.home.arpa", "tok", 5.0)
     result = await client.execute(
         ResolvedPortainerAction(operation="start"),
         "5",
@@ -422,7 +517,7 @@ async def test_portainer_client_treats_304_as_already_in_desired_state(
 
 @pytest.mark.asyncio
 async def test_portainer_client_logs_operation_redacts_known_patterns_but_not_unrecognized_secrets(
-    monkeypatch: pytest.MonkeyPatch, secrets_dir: Path
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """CR-083: pins the documented residual risk in docs/06-security.en.md (CR-047) — the ``logs``
 
@@ -442,13 +537,8 @@ async def test_portainer_client_logs_operation_redacts_known_patterns_but_not_un
             )
         return httpx.Response(404)
 
-    transport = httpx.MockTransport(handler)
-    real_async_client = httpx.AsyncClient
-    monkeypatch.setattr(
-        "capataz_runner.executor.httpx.AsyncClient",
-        lambda *args, **kwargs: real_async_client(*args, transport=transport, **kwargs),
-    )
-    client = PortainerClient(configured_settings(secrets_dir))
+    mock_portainer(monkeypatch, handler)
+    client = PortainerClient("https://portainer.home.arpa", "tok", 5.0)
     result = await client.execute(
         ResolvedPortainerAction(operation="logs"),
         "5",
@@ -458,3 +548,143 @@ async def test_portainer_client_logs_operation_redacts_known_patterns_but_not_un
     logs = result.data["logs"]["c1"]
     assert "Bearer xyz" not in logs
     assert "DB_PASS=hunter2" in logs
+
+
+# --- executor -------------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_persistent_executor_uses_portainer_only_for_the_runtime_selectors(
+    secrets_dir: Path,
+) -> None:
+    runtime = {
+        "environment_id": "3",
+        "stack_name": "ai",
+        "containers": [{"name": "open-webui", "required": True}],
+        "aggregation": "all_required",
+    }
+
+    class FakePortainer:
+        async def execute(
+            self,
+            operation: object,
+            environment_id: str,
+            selectors: object,
+            stack_name: object = None,
+        ) -> ExecutionResult:
+            assert (environment_id, selectors, stack_name) == ("3", runtime, "ai")
+            return ExecutionResult("succeeded", "selected only", {"containers": 1})
+
+    executor = PersistentWorkerAutomationExecutor(configured_settings(secrets_dir), FakePortainer())  # type: ignore[arg-type]
+    result = await executor.execute(portainer_job(runtime=runtime))
+    assert result.status == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_persistent_executor_rejects_a_portainer_action_without_runtime(
+    secrets_dir: Path,
+) -> None:
+    executor = PersistentWorkerAutomationExecutor(configured_settings(secrets_dir))
+    with pytest.raises(ActionConfigurationError, match="runtime"):
+        await executor.execute(portainer_job(runtime=None))
+
+
+@pytest.mark.asyncio
+async def test_ansible_execution_materializes_credentials_and_caps_the_timeout(
+    monkeypatch: pytest.MonkeyPatch, secrets_dir: Path
+) -> None:
+    """settings.execution_timeout_seconds caps action.timeout_seconds, never extends it; the
+    credential files exist while the process runs and are gone afterwards."""
+    captured: dict[str, Any] = {}
+
+    async def fake_run_subprocess(
+        command: tuple[str, ...], *, cwd: object, timeout_seconds: int, **kwargs: Any
+    ) -> ProcessResult:
+        key_path = Path(command[command.index("--private-key") + 1])
+        captured.update(
+            timeout_seconds=timeout_seconds,
+            key_path=key_path,
+            key=_read_bytes(key_path),
+            known_secrets=kwargs["known_secrets"],
+        )
+        return ProcessResult(0, "ok", "")
+
+    monkeypatch.setattr("capataz_runner.executor.run_subprocess", fake_run_subprocess)
+    job = AutomationJob(
+        execution_id="e",
+        service_id="open-webui",
+        action_type="ansible",
+        action_config={
+            "playbook": "playbooks/backup_service.yml",
+            "limit": "node-ai-01",
+            "timeout_seconds": 600,
+        },
+        connector_config=HOMELAB,
+        secrets={
+            "private_key": b"PRIVATE-KEY-MATERIAL",
+            "known_hosts": b"kh\n",
+            "vault_password": b"v",
+        },
+    )
+    executor = PersistentWorkerAutomationExecutor(
+        configured_settings(secrets_dir, execution_timeout_seconds=120)
+    )
+    result = await executor.execute(job)
+    assert result.status == "succeeded"
+    assert captured["timeout_seconds"] == 120
+    assert captured["key"] == b"PRIVATE-KEY-MATERIAL\n"
+    assert "PRIVATE-KEY-MATERIAL" in captured["known_secrets"]
+    assert not captured["key_path"].exists()
+
+
+@pytest.mark.asyncio
+async def test_ssh_execution_runs_an_allow_listed_command(
+    monkeypatch: pytest.MonkeyPatch, secrets_dir: Path
+) -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_run_subprocess(
+        command: tuple[str, ...], *, cwd: object, timeout_seconds: int, **kwargs: Any
+    ) -> ProcessResult:
+        captured.update(command=command, timeout_seconds=timeout_seconds)
+        return ProcessResult(0, "Filesystem  Size", "")
+
+    monkeypatch.setattr("capataz_runner.executor.run_subprocess", fake_run_subprocess)
+    job = AutomationJob(
+        execution_id="e",
+        service_id="mole",
+        action_type="ssh",
+        action_config={"command_id": "disk_usage", "params": {"path": "/srv"}},
+        connector_config={**SSH_TARGET, "private_key": "k", "known_hosts": "kh"},
+        secrets={"private_key": b"KEY", "known_hosts": b"kh"},
+    )
+    result = await PersistentWorkerAutomationExecutor(configured_settings(secrets_dir)).execute(job)
+    assert result.status == "succeeded"
+    assert captured["command"][-2:] == ("mole.home.arpa", "df -h /srv")
+    assert captured["timeout_seconds"] == 60
+
+
+@pytest.mark.asyncio
+async def test_ssh_execution_rejects_unknown_commands_and_a_broken_allow_list(
+    tmp_path: Path, secrets_dir: Path
+) -> None:
+    job = AutomationJob(
+        execution_id="e",
+        service_id="mole",
+        action_type="ssh",
+        action_config={"command_id": "rm_everything"},
+        connector_config=SSH_TARGET,
+    )
+    executor = PersistentWorkerAutomationExecutor(configured_settings(secrets_dir))
+    with pytest.raises(ActionConfigurationError, match="not allow-listed"):
+        await executor.execute(job)
+    (tmp_path / "ssh_commands.yml").write_text("commands: [\n", encoding="utf-8")
+    broken = PersistentWorkerAutomationExecutor(
+        Settings(secrets_dir=secrets_dir, project_root=tmp_path)
+    )
+    with pytest.raises(ActionConfigurationError, match="allow-list is invalid"):
+        await broken.execute(job)
+
+
+def test_automation_job_repr_never_contains_decrypted_secrets() -> None:
+    assert "portainer-super-secret" not in repr(portainer_job())

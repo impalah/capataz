@@ -34,6 +34,9 @@ graphify-out/
 !.env.example
 secrets/*
 !secrets/.gitkeep
+# Catalog resource sources (`{file: ...}`), mounted read-only on the api — same rule as secrets/
+resources/*
+!resources/.gitkeep
 
 # Locally-trusted internal CA bundle (public cert, but host/homelab-specific — see `make trust-ca`)
 certs/*

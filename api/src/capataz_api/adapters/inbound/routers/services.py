@@ -14,7 +14,7 @@ from capataz_api.adapters.inbound.schemas import (
 )
 from capataz_api.application.policies.rbac import ROLE_ADMIN, ROLE_VIEWER
 from capataz_api.application.services import ServiceApplicationService
-from capataz_api.domain.entities import Principal, Service
+from capataz_api.domain.entities import Principal
 
 router = APIRouter(prefix="/api/v1", tags=["Services"])
 
@@ -37,56 +37,59 @@ async def list_services(
         limit=limit,
     )
     return Page(
-        items=[ServiceResponse.model_validate(item) for item in items],
+        items=[ServiceResponse.from_entity(item) for item in items],
         total=total,
         offset=offset,
         limit=limit,
     )
 
 
-@router.post("/services", status_code=201, response_model=ServiceResponse)
+@router.post("/services", status_code=201)
 async def create_service(
     payload: ServiceInput,
     request: Request,
     service: Annotated[ServiceApplicationService, Depends(service_application_service_dependency)],
     principal: Annotated[Principal, Depends(require(ROLE_ADMIN))],
-) -> Service:
-    return await service.create_service(
-        data=payload.model_dump(), principal=principal, request_id=request.state.request_id
+) -> ServiceResponse:
+    created = await service.create_service(
+        data=payload.model_dump(mode="json"),
+        principal=principal,
+        request_id=request.state.request_id,
     )
+    return ServiceResponse.from_entity(created)
 
 
-@router.get("/services/{service_id}", response_model=ServiceResponse)
+@router.get("/services/{service_id}")
 async def get_service(
     service_id: str,
     service: Annotated[ServiceApplicationService, Depends(service_application_service_dependency)],
     principal: Annotated[Principal, Depends(require(ROLE_VIEWER))],
-) -> Service:
-    return await service.get_service(service_id)
+) -> ServiceResponse:
+    return ServiceResponse.from_entity(await service.get_service(service_id))
 
 
-@router.patch("/services/{service_id}", response_model=ServiceResponse)
+@router.patch("/services/{service_id}")
 async def patch_service(
     service_id: str,
     payload: ServicePatch,
     request: Request,
     service: Annotated[ServiceApplicationService, Depends(service_application_service_dependency)],
     principal: Annotated[Principal, Depends(require(ROLE_ADMIN))],
-) -> Service:
+) -> ServiceResponse:
     # exclude_unset (not exclude_none): distinguishes "the client didn't send this field" from
-    # "the client explicitly sent it as empty/false".
-    # A client that PATCHes only {name} must never wipe container_selectors/maintenance/etc, which
-    # default to {}/False rather than None and so survived exclude_none unchanged.
-    values = payload.model_dump(exclude_unset=True)
+    # "the client explicitly sent it as empty/null" — a client that PATCHes only {name} must
+    # never wipe runtime/observability/maintenance/etc.
+    values = payload.model_dump(exclude_unset=True, mode="json")
     values.pop("id", None)
     expected_version = values.pop("expected_version", None)
-    return await service.patch_service(
+    updated = await service.patch_service(
         service_id,
         data=values,
         expected_version=expected_version,
         principal=principal,
         request_id=request.state.request_id,
     )
+    return ServiceResponse.from_entity(updated)
 
 
 @router.delete("/services/{service_id}", status_code=204, response_model=None)
@@ -117,14 +120,7 @@ async def refresh_status(
 @router.get("/services/{service_id}/links")
 async def links(
     service_id: str,
-    request: Request,
     service: Annotated[ServiceApplicationService, Depends(service_application_service_dependency)],
     principal: Annotated[Principal, Depends(require(ROLE_VIEWER))],
 ) -> dict[str, str]:
-    settings = request.app.state.settings
-    return await service.get_links(
-        service_id,
-        portainer_url=str(settings.portainer_url) if settings.portainer_url else None,
-        grafana_url=str(settings.grafana_url) if settings.grafana_url else None,
-        loki_url=str(settings.loki_url) if settings.loki_url else None,
-    )
+    return await service.get_links(service_id)

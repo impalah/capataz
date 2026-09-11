@@ -20,6 +20,7 @@ const service1: Service = {
   description: 'IA interfaz',
   group_name: 'IA',
   environment: 'homelab',
+  tags: ['ia', 'externo'],
 }
 const service2: Service = {
   id: 'immich',
@@ -155,5 +156,31 @@ describe('DashboardPage', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Open WebUI')
+  })
+
+  it('filters services by tag, requiring every selected tag, and clears back to all', async () => {
+    const { wrapper } = await mountDashboard()
+    await expandFilters(wrapper)
+    const tagSelect = wrapper
+      .findAllComponents({ name: 'QSelect' })
+      .find((select) => select.props('label') === 'Etiquetas')
+    expect(tagSelect?.props('options')).toEqual(['externo', 'ia'])
+
+    tagSelect?.vm.$emit('update:modelValue', ['ia'])
+    await flushPromises()
+    expect(wrapper.text()).toContain('Open WebUI')
+    expect(wrapper.text()).not.toContain('Immich')
+
+    tagSelect?.vm.$emit('update:modelValue', null)
+    await flushPromises()
+    expect(wrapper.text()).toContain('Immich')
+  })
+
+  it('matches the search text against tags too', async () => {
+    const { wrapper } = await mountDashboard()
+    await expandFilters(wrapper)
+    await wrapper.get('.search input').setValue('externo')
+    expect(wrapper.text()).toContain('Open WebUI')
+    expect(wrapper.text()).not.toContain('Immich')
   })
 })

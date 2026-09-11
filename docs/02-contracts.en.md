@@ -27,10 +27,6 @@ CAPATAZ_POSTGRES_DB=capataz     # postgres container bootstrap only; api/runner 
 CAPATAZ_POSTGRES_USER=capataz   # postgres container bootstrap only; api/runner don't read this
 CAPATAZ_CELERY_QUEUE=automation
 CAPATAZ_CELERY_CONCURRENCY=2
-CAPATAZ_PORTAINER_URL=https://portainer.404labo.net
-CAPATAZ_GRAFANA_URL=https://grafana.404labo.net
-CAPATAZ_LOKI_URL=https://loki.404labo.net
-CAPATAZ_PROMETHEUS_URL=https://prometheus.404labo.net
 CAPATAZ_COGNITO_REGION=eu-west-1
 CAPATAZ_COGNITO_USER_POOL_ID=
 CAPATAZ_COGNITO_APP_CLIENT_ID=
@@ -42,7 +38,8 @@ CAPATAZ_AUTH_MODE=cognito|oidc|dev_mock   # dev_mock ONLY permitted if CAPATAZ_E
 CAPATAZ_INITIAL_CATALOG_YAML_PATH=/app/catalog/services.example.yaml
 CAPATAZ_HTTP_TIMEOUT_SECONDS=5
 CAPATAZ_HEALTH_ALLOWED_HOST_SUFFIXES=.404labo.net
-CAPATAZ_METRICS_PROVIDER=prometheus|none
+CAPATAZ_RESOURCES_DIR=/run/capataz-resources   # api; where catalog resources' {file: ...} sources are read from
+CAPATAZ_ALLOW_INLINE_RESOURCES=false           # api; allow inline {base64: ...} resources when CAPATAZ_ENV=production
 CAPATAZ_FRONTEND_API_BASE_URL=/api/v1   (frontend, served behind the nginx proxy)
 CAPATAZ_FRONTEND_USE_MSW=false          (frontend; browser-side dev_mock)
 CAPATAZ_FRONTEND_DEV_USER=ana.admin     (frontend; initial synthetic identity in dev_mock)
@@ -57,6 +54,10 @@ startup time (see [ADR 007](adr/007-runtime-frontend-config.en.md)), not Vite's 
 A standalone frontend deployment (outside Docker Compose) doesn't use these variables at
 all — edit `config.js` directly, see [Operations](07-operations.en.md#standalone-frontend-deployment-s3cloudfront--your-own-nginx).
 
+Portainer, Grafana, Loki and Prometheus URLs are not environment variables: they are connector
+configuration in the catalog (see [ADR 008](adr/008-connectors-and-resources.en.md) and the
+[YAML Catalog](05-yaml-catalog.en.md)).
+
 ## 3. Docker Secrets (files under `secrets/`, mounted at `/run/secrets/<name>`)
 
 ```
@@ -64,13 +65,10 @@ database_url             -> api, runner (full SQLAlchemy DSN, password included)
 redis_url                -> api, runner (full URL, password included)
 postgres_password        -> postgres (for its own bootstrap only)
 redis_password           -> redis (for its own --requirepass only)
-portainer_token          -> api, runner (if runner calls Portainer directly; see ADR-003)
-prometheus_token         -> api (optional; only sent as Authorization: Bearer if the secret file exists)
 cognito_client_secret    -> api
-runner_ssh_private_key   -> runner
-runner_known_hosts       -> runner
-ansible_vault_password   -> runner
+resources_master_key     -> api, runner (Fernet key(s), one per line: encrypts/decrypts catalog resources, see ADR-008)
 ```
+Integration credentials — Portainer and Prometheus tokens, SSH private keys, `known_hosts`, Ansible Vault passwords — are not Docker secrets: they are catalog **resources**, stored encrypted in PostgreSQL with `resources_master_key` and referenced by connectors ([ADR 008](adr/008-connectors-and-resources.en.md)).
 `database_url`/`redis_url` are the entire DSN (scheme, user, password, host, port, DB) treated as a single secret — they are never assembled from a bare host/port/user plus a separate password secret. `postgres_password`/`redis_password` still exist only to bootstrap the `postgres`/`redis` containers themselves; they must contain the same password embedded in `database_url`/`redis_url` (the operator's responsibility when generating them, see README.md). The API reads secrets from `/run/secrets/*` via `infrastructure/secrets/file_secret_reader.py`. Never hardcode them.
 
 ## 4. RBAC roles (Cognito groups, OIDC, and dev_mock)
@@ -79,8 +77,8 @@ ansible_vault_password   -> runner
 
 ## 5. Domain model — table names (snake_case, plural)
 
-`services`, `action_definitions`, `executions`, `execution_events`, `audit_events`.
-IDs: `services.id` is a slug string (PK). Everything else is UUID.
+`services`, `action_definitions`, `executions`, `execution_events`, `audit_events`, `connectors`, `resources`.
+IDs: `services.id`, `connectors.id` and `resources.id` are slug strings (PK). Everything else is UUID. `services.spec` holds the service spec as JSON (JSONB in PostgreSQL); `action_definitions.connector_id` references `connectors.id` (`ON DELETE RESTRICT`).
 
 ## 6. Shared enums (exact values, lowercase)
 
@@ -89,6 +87,9 @@ IDs: `services.id` is a slug string (PK). Everything else is UUID.
 - RiskLevel: `read`, `operate`, `critical`
 - ExecutionStatus: `queued`, `running`, `succeeded`, `failed`, `cancelled`, `timed_out`, `rejected`
 - ExecutionSource: `ui`, `api`, `yaml`, `n8n`, `mcp`, `cron`, `alert`, `system`
+- ConnectorType: `portainer`, `prometheus`, `grafana`, `loki`, `http`, `ansible`, `ssh`
+- ConnectorCapability: `status`, `actions`, `metrics`, `health`, `dashboards`, `logs`
+- ResourceType: `secret`, `ssh_private_key`, `known_hosts`, `file`
 
 ## 7. REST API — `/api/v1` prefix (see spec §8 for the full endpoint list)
 
@@ -100,7 +101,7 @@ Queue name: `automation`. Broker/result backend: Redis (`redis://:<password>@red
 
 ## 9. Catalog YAML
 
-Example path: `catalog/services.example.yaml` (see spec §9 for the exact shape). Root keys `version` and `services`.
+Example path: `catalog/services.example.yaml` (shape in [YAML Catalog](05-yaml-catalog.en.md)). Root keys `version` (`2`), `resources`, `connectors` and `services`. A `version: 1` catalog is rejected; convert it with `scripts/convert_catalog_v1_to_v2.py`.
 
 ## 10. Local dev port convention
 

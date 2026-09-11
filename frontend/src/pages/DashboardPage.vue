@@ -15,14 +15,18 @@ const group = ref<string | null>(null)
 const environment = ref<string | null>(null)
 const groups = computed(() => [...new Set(services.items.map((service) => service.group_name))])
 const environments = computed(() => [...new Set(services.items.map((service) => service.environment))])
+// Clearable multi-select: q-select resets it to null, not [].
+const selectedTags = ref<string[] | null>([])
+const tags = computed(() => [...new Set(services.items.flatMap((service) => service.tags ?? []))].sort())
 const filtered = computed(() =>
   services.items.filter(
     (service) =>
       (!group.value || service.group_name === group.value) &&
       (!environment.value || service.environment === environment.value) &&
-      `${service.name} ${service.description ?? ''}`
+      (selectedTags.value ?? []).every((tag) => service.tags?.includes(tag)) &&
+      `${service.name} ${service.description ?? ''} ${(service.tags ?? []).join(' ')}`
         .toLocaleLowerCase()
-        .includes(search.value.toLocaleLowerCase()),
+        .includes((search.value ?? '').toLocaleLowerCase()),
   ),
 )
 const refresh = async (id: string, silent = false) => {
@@ -100,6 +104,16 @@ onMounted(async () => {
             dense
             clearable
             :label="t('pages.dashboard.environmentLabel')"
+          /><q-select
+            v-if="tags.length"
+            v-model="selectedTags"
+            :options="tags"
+            multiple
+            use-chips
+            outlined
+            dense
+            clearable
+            :label="t('pages.dashboard.tagsLabel')"
           />
         </section>
       </q-slide-transition>
@@ -135,6 +149,7 @@ onMounted(async () => {
               search = ''
               group = null
               environment = null
+              selectedTags = []
             }
           "
         /></section></q-page

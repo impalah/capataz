@@ -5,25 +5,39 @@
 El API de Capataz consulta el Prometheus ya existente en este homelab para mostrar métricas por
 servicio (CPU, memoria o cualquier otra que declare el operador) en las tarjetas del dashboard
 "Servicios", a través de un `MetricsProviderPort` / `PrometheusMetricsProvider`
-(`api/src/capataz_api/adapters/outbound/prometheus.py`), seleccionado con
-`CAPATAZ_METRICS_PROVIDER=prometheus|none` y apuntando a `CAPATAZ_PROMETHEUS_URL` — ver
+(`api/src/capataz_api/adapters/outbound/prometheus.py`), construido por cada **conector**
+`prometheus` del catálogo (su `url`, su recurso `token` opcional y `verify_tls`) — ver
+[ADR 008](../../docs/adr/008-connectors-and-resources.es.md),
 [docs/01-architecture.md](../../docs/01-architecture.es.md),
 [docs/05-yaml-catalog.md](../../docs/05-yaml-catalog.es.md) y
 [docs/06-security.md](../../docs/06-security.es.md).
 
 ## Cómo funciona
 
-Cada entrada del catálogo declara su propia lista de métricas:
+Cada entrada del catálogo declara su propia lista de métricas, cada una contra un conector con la
+capacidad `metrics`:
 
 ```yaml
-metrics:
-  - label: CPU
+connectors:
+  - id: prometheus
     type: prometheus
-    query: 'avg(rate(container_cpu_usage_seconds_total{...}[30s])) * 100'
-  - label: Memoria
-    type: prometheus
-    query: 'avg(container_memory_working_set_bytes{...}) / 1024 / 1024'
+    config: { url: http://prometheus.404labo.net:9090 }
+services:
+  - id: ollama
+    # ...
+    observability:
+      metrics:
+        - label: CPU
+          connector: prometheus
+          query: 'avg(rate(container_cpu_usage_seconds_total{...}[30s])) * 100'
+        - label: Memoria
+          connector: prometheus
+          query: 'avg(container_memory_working_set_bytes{...}) / 1024 / 1024'
 ```
+
+Si el hostname de Prometheus está detrás de un proxy de forward-auth (p. ej. un outpost de
+Authentik), apunta el conector a una dirección que se lo salte — el proxy respondería a la API con
+un 302 a su página de login. El homelab usa la directa `http://prometheus.404labo.net:9090`.
 
 `query` es el PromQL completo — no hay ninguna query fija/integrada ni ningún selector por
 servicio que el adaptador construya por el admin. Se lanza tal cual contra `/api/v1/query` de
@@ -36,16 +50,17 @@ Las métricas se consultan desde `StatusService.refresh` junto a las comprobacio
 Portainer/health ya existentes, y se devuelven en la misma respuesta de `refresh-status` — no hay
 endpoint ni caché de métricas propios (de hecho no hay ninguna caché de estado: `POST
 /services/{id}/refresh-status` siempre ejecuta las comprobaciones reales de
-Portainer/health/Prometheus). Cada métrica se consulta de forma independiente: una query lenta o
-rota devuelve `value: null` para esa métrica sin afectar al estado, los contenedores, la salud del
-servicio ni al resto de sus métricas.
+Portainer/health/Prometheus). Las métricas se agrupan por conector y cada una se consulta de forma
+independiente: una query lenta o rota — o un conector inalcanzable — devuelve `value: null` para
+las métricas afectadas sin afectar al estado, los contenedores, la salud del servicio ni al resto
+de sus métricas.
 
 ## Credenciales
 
-Ninguna por defecto. Si en algún momento este Prometheus necesitase autenticación, el adaptador
-ya acepta un token bearer opcional leído del Docker secret `prometheus_token`
-(`api/src/capataz_api/bootstrap/lifespan.py`) — basta con montar ese secreto para activarlo; no
-hace falta tocar código.
+Ninguna por defecto. Si un Prometheus necesita autenticación, asigna al `token` opcional de su
+conector un recurso `secret`: se envía como `Authorization: Bearer`. El recurso está cifrado en la
+base de datos y la API solo lo descifra al consultar — no hace falta ningún Docker secret ni tocar
+código.
 
 ## Configuración de scrape
 

@@ -42,10 +42,11 @@ curl -i http://localhost:8000/health/ready
 
 ## Portainer, healthchecks y Ansible
 
-- Portainer: confirma `CAPATAZ_PORTAINER_URL`, conectividad desde el servicio que lo consume y que el token tiene solo permisos de lectura/operación requeridos. Revisa `environment_id`, stack y selectores declarados; nunca pruebes con un ID de contenedor arbitrario.
+- Portainer: confirma la URL del conector Portainer (`https`) y su recurso de token (**Catálogo → Conectores/Recursos**), la conectividad desde el servicio que lo consume (API para estado, runner para acciones) y que el token tiene solo los permisos de lectura/operación requeridos. Revisa el `runtime` del servicio (`environment_id`, stack, selectores declarados); nunca pruebes con un ID de contenedor arbitrario.
 - Health HTTP: comprueba URL, DNS, certificado y allow-list `CAPATAZ_HEALTH_ALLOWED_HOST_SUFFIXES`. Las direcciones loopback, link-local y metadata cloud deben rechazarse salvo configuración explícita y revisada.
-- Ansible/SSH: valida secret de clave, permisos, formato de `runner_known_hosts`, cuenta técnica, inventario y `limit`. Un fallo de host key se corrige actualizando la huella verificada, no usando `StrictHostKeyChecking=no`.
-- Vault: verifica que el archivo secreto no está vacío y que los logs estén sanitizados. No imprimas variables extra ni `-vvv` sin redacción y control de acceso.
+- Ansible/SSH: valida los recursos `private_key`/`known_hosts` del conector (tipo y contenido — sustitúyelos si hay dudas), cuenta técnica, inventario y `limit`; en un conector `ssh`, que el `command_id` existe en `runner/ssh_commands.yml` y que los parámetros cumplen sus patrones (si no, la ejecución queda `rejected`). Un fallo de host key se corrige actualizando el recurso `known_hosts` verificado, no usando `StrictHostKeyChecking=no`.
+- Vault: verifica que el recurso `vault_password` del conector no está vacío y que los logs estén sanitizados. No imprimas variables extra ni `-vvv` sin redacción y control de acceso.
+- Recursos: si la API no arranca, comprueba que `resources_master_key` está montado; un recurso que ya no se descifra (una clave quitada de ese secret demasiado pronto) deja `rejected` las ejecuciones que lo necesitan — vuelve a subir su contenido.
 
 ## Fallos comunes de secretos y Cognito
 

@@ -1,6 +1,7 @@
 from functools import lru_cache
+from pathlib import Path
 
-from pydantic import AnyHttpUrl, Field, ValidationInfo, field_validator
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,10 +20,6 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:8080"
     celery_queue: str = "automation"
     celery_concurrency: int = 2
-    portainer_url: AnyHttpUrl | None = None
-    grafana_url: AnyHttpUrl | None = None
-    loki_url: AnyHttpUrl | None = None
-    prometheus_url: AnyHttpUrl | None = None
     cognito_region: str = "eu-west-1"
     cognito_user_pool_id: str = ""
     cognito_app_client_id: str = ""
@@ -33,15 +30,13 @@ class Settings(BaseSettings):
     auth_mode: str = "cognito"
     initial_catalog_yaml_path: str | None = None
     http_timeout_seconds: float = Field(default=5, gt=0, le=60)
+    # Global SSRF ceiling for every outbound URL/host: health checks, connector URLs, SSH hosts.
     health_allowed_host_suffixes: str = ".404labo.net"
-    metrics_provider: str = "prometheus"
-
-    @field_validator("metrics_provider")
-    @classmethod
-    def known_metrics_provider(cls, value: str) -> str:
-        if value not in {"prometheus", "none"}:
-            raise ValueError("metrics_provider must be prometheus or none")
-        return value
+    # Catalog resources with a {file: ...} source are only ever read from inside this directory.
+    resources_dir: Path = Path("/run/capataz-resources")
+    # Inline base64 resource content in the catalog is dev/test-only: refused in production
+    # unless this is explicitly enabled (same opt-in pattern as dev_mock).
+    allow_inline_resources: bool = False
 
     @field_validator("auth_mode")
     @classmethod
@@ -84,6 +79,10 @@ class Settings(BaseSettings):
         url = read_secret("redis_url")
         assert url is not None  # required=True (the default) never returns None
         return url
+
+    @property
+    def inline_resources_permitted(self) -> bool:
+        return self.env != "production" or self.allow_inline_resources
 
     @property
     def health_suffixes(self) -> tuple[str, ...]:

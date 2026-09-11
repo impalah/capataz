@@ -3,7 +3,11 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse
 
-from capataz_api.adapters.inbound.routers.deps import repo_dependency, require
+from capataz_api.adapters.inbound.routers.deps import (
+    catalog_context_dependency,
+    repo_dependency,
+    require,
+)
 from capataz_api.adapters.inbound.schemas import (
     CatalogFieldErrorResponse,
     CatalogImport,
@@ -12,16 +16,18 @@ from capataz_api.adapters.inbound.schemas import (
 from capataz_api.application.policies import build_audit_event
 from capataz_api.application.policies.rbac import ROLE_ADMIN
 from capataz_api.application.ports import ServiceRepository
-from capataz_api.application.services import (
-    CatalogImportOutcome,
-    export_catalog,
-    parse_catalog_yaml,
-    upsert_catalog,
-)
+from capataz_api.application.services import CatalogContext, export_catalog, import_catalog_yaml
 from capataz_api.domain.entities import Principal
-from capataz_api.domain.exceptions import ValidationError
+from capataz_api.domain.exceptions import FieldError
 
 router = APIRouter(prefix="/api/v1", tags=["Catalog"])
+
+
+def _field_errors(items: tuple[FieldError, ...]) -> list[CatalogFieldErrorResponse]:
+    return [
+        CatalogFieldErrorResponse(path=item.path, message=item.message, line=item.line)
+        for item in items
+    ]
 
 
 @router.post("/catalog/import")
@@ -29,18 +35,14 @@ async def catalog_import(
     payload: CatalogImport,
     request: Request,
     repo: Annotated[ServiceRepository, Depends(repo_dependency)],
+    context: Annotated[CatalogContext, Depends(catalog_context_dependency)],
     principal: Annotated[Principal, Depends(require(ROLE_ADMIN))],
 ) -> CatalogImportResponse:
     # Invalid input is expected, everyday operator feedback here, not an HTTP-level failure — the
     # response is always 200; the client checks `valid`/`errors` (see CatalogImportOutcome).
-    try:
-        catalog = parse_catalog_yaml(payload.yaml)
-    except ValidationError as exc:
-        outcome = CatalogImportOutcome(
-            dry_run=payload.dry_run, valid=False, errors=exc.field_errors
-        )
-    else:
-        outcome = await upsert_catalog(repo, catalog, payload.dry_run)
+    outcome = await import_catalog_yaml(
+        repo, payload.yaml, dry_run=payload.dry_run, context=context
+    )
     await repo.append_audit(
         build_audit_event(
             principal,
@@ -55,10 +57,9 @@ async def catalog_import(
         valid=outcome.valid,
         created=outcome.created,
         updated=outcome.updated,
-        errors=[
-            CatalogFieldErrorResponse(path=error.path, message=error.message, line=error.line)
-            for error in outcome.errors
-        ],
+        errors=_field_errors(outcome.errors),
+        warnings=_field_errors(outcome.warnings),
+        counts=outcome.counts,
     )
 
 

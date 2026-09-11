@@ -4,7 +4,9 @@ export default defineConfig({
   timeout: 30_000,
   // Must be http://localhost:9000, not 127.0.0.1:9000: CORS treats them as different origins, and
   // CAPATAZ_CORS_ORIGINS (see .env.example) only allows http://localhost:9000.
-  use: { baseURL: 'http://localhost:9000', trace: 'on-first-retry' },
+  // es-ES: the specs assert Spanish UI text, and src/i18n picks the locale from the browser
+  // (navigator.languages) when none is stored — without this, a non-Spanish host locale fails them.
+  use: { baseURL: 'http://localhost:9000', locale: 'es-ES', trace: 'on-first-retry' },
   webServer: {
     // dev_mock synthetic-admin mode against a real, already-running api (see docker-compose.yml /
     // CI's e2e job) — no more MSW/fixture mocking. CORS on the api side already allows this origin

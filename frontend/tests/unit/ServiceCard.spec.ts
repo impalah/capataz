@@ -10,7 +10,12 @@ const service: Service = {
   description: 'Interfaz de modelos.',
   group_name: 'IA',
   environment: 'homelab',
-  portainer_stack_name: 'ai-platform',
+  runtime: {
+    connector: 'portainer',
+    environment_id: '1',
+    stack_name: 'ai-platform',
+    containers: [{ name: 'app' }],
+  },
   service_url: 'https://open-webui.home.arpa',
 }
 const status: ServiceStatusResult = {
@@ -136,5 +141,15 @@ describe('ServiceCard', () => {
   it('renders no metrics row when the service declares none', async () => {
     const { wrapper } = await mountCard({ service, status })
     expect(wrapper.find('.card-row-metrics').exists()).toBe(false)
+  })
+
+  it('renders the catalog tags as chips, and no tags row without tags', async () => {
+    const { wrapper } = await mountCard({ service: { ...service, tags: ['ia', 'externo'] }, status })
+    expect(wrapper.findAll('.card-tag').map((chip) => chip.text())).toEqual(['ia', 'externo'])
+  })
+
+  it('renders no tags row when the service has none', async () => {
+    const { wrapper } = await mountCard({ service, status })
+    expect(wrapper.find('.card-row-tags').exists()).toBe(false)
   })
 })

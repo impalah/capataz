@@ -13,9 +13,21 @@ def test_file_secrets_are_used_in_database_and_redis_urls(secrets_dir: Path) -> 
     assert "redis-super-secret" in settings.redis_url
     assert settings.postgres_password.get_secret_value() == "postgres-super-secret"
     assert settings.redis_password.get_secret_value() == "redis-super-secret"
-    assert settings.runner_ssh_private_key_path == secrets_dir / "runner_ssh_private_key"
-    assert settings.runner_known_hosts_path == secrets_dir / "runner_known_hosts"
-    assert settings.ansible_vault_password.get_secret_value() == "vault-super-secret"
+
+
+def test_action_credentials_are_no_longer_runner_settings(secrets_dir: Path) -> None:
+    """ADR-008: the Portainer URL/token and the SSH/vault material live in encrypted resources
+    referenced by connectors — the runner only keeps the master key and the SSH allow-list."""
+    settings = Settings(secrets_dir=secrets_dir, project_root=Path("/app"))
+    for removed in (
+        "portainer_url",
+        "portainer_token",
+        "runner_ssh_private_key_path",
+        "runner_known_hosts_path",
+        "ansible_vault_password",
+    ):
+        assert not hasattr(settings, removed)
+    assert settings.ssh_commands_path == Path("/app/ssh_commands.yml")
 
 
 def test_missing_or_empty_file_secret_is_rejected(tmp_path: Path) -> None:

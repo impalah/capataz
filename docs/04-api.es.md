@@ -59,7 +59,7 @@ Devuelve `{subject, email, groups}` del `Principal` autenticado; el frontend lo 
 | DELETE | `/services/{service_id}/actions/{action_key}` | admin |
 | POST | `/services/{service_id}/actions/{action_key}/execute` | operator/admin según riesgo |
 
-La ejecución crea una `Execution`, registra auditoría y encola únicamente su UUID. Los tipos modelados son `portainer`, `ansible`, `http`, `ssh` y `rsync`; V1 ejecuta `portainer` y `ansible` según sus configuraciones declaradas, no comandos libres.
+La ejecución crea una `Execution`, registra auditoría y encola únicamente su UUID. Toda acción referencia un conector con la capacidad `actions` (`connector` en el cuerpo); su `action_type`, devuelto como solo lectura, es el tipo de ese conector. El runner ejecuta las acciones de conectores `portainer`, `ansible` y `ssh` según su configuración declarada y en allow-list — nunca comandos libres (una acción `ssh` solo ejecuta un `command_id` de `runner/ssh_commands.yml`).
 
 Ejemplo de solicitud crítica:
 
@@ -72,6 +72,30 @@ Content-Type: application/json
 
 {"source":"ui","reason":"Copia previa a actualización","params":{}}
 ```
+
+### Conectores
+
+| Método | Ruta | Rol |
+|---|---|---|
+| GET | `/connectors` | admin |
+| POST | `/connectors` | admin |
+| GET | `/connectors/{connector_id}` | admin |
+| PUT | `/connectors/{connector_id}?expected_version=` | admin |
+| DELETE | `/connectors/{connector_id}` | admin; `409` mientras algún servicio o acción lo use (el detalle los enumera) |
+
+El cuerpo es un spec de conector, `{id, type, description, config}`, cuyo `config` se valida según `type` (ver [Catálogo YAML](05-yaml-catalog.es.md#connectors)): los recursos referenciados tienen que existir y ser del tipo esperado, y las URLs/hosts deben pasar la allow-list SSRF. `id` y `type` son inmutables (`409`). Las respuestas añaden `capabilities` y `version`; `expected_version` es la misma comprobación de concurrencia optimista que el `PATCH` de un servicio.
+
+### Recursos
+
+| Método | Ruta | Rol | Cuerpo |
+|---|---|---|---|
+| GET | `/resources` | admin | |
+| POST | `/resources` | admin | `{id, type, description, content_base64}` |
+| GET | `/resources/{resource_id}` | admin | |
+| PUT | `/resources/{resource_id}/content` | admin | `{content_base64, description}` |
+| DELETE | `/resources/{resource_id}` | admin; `409` mientras un conector lo use | |
+
+El contenido viaja en base64 dentro del JSON (64 KiB como máximo una vez decodificado) y se cifra antes de guardarse. **Ningún endpoint lo devuelve**: las respuestas son `{id, type, description, fingerprint, size, source, version, created_at, updated_at}`, con una huella de 12 caracteres para distinguir versiones; la auditoría nunca lo incluye.
 
 ### Ejecuciones y auditoría
 
@@ -89,8 +113,8 @@ Estados de ejecución: `queued`, `running`, `succeeded`, `failed`, `cancelled`, 
 
 | Método | Ruta | Rol | Finalidad |
 |---|---|---|---|
-| POST | `/catalog/import` | admin | Recibe `{"yaml":"...","dry_run":true|false}`; valida YAML y hace upsert por `Service.id`. |
-| GET | `/catalog/export` | admin | Devuelve YAML limpio, sin secretos ni resultados transitorios. |
+| POST | `/catalog/import` | admin | Recibe `{"yaml":"...","dry_run":true|false}` con un catálogo `version: 2`; valida todo (recursos, conectores, servicios, acciones y sus referencias) antes de escribir nada y después hace el upsert entero o nada. Devuelve `{dry_run, valid, created, updated, errors, warnings, counts}` — errores y avisos con su línea del YAML, `counts` por tipo. |
+| GET | `/catalog/export` | admin | Devuelve YAML v2 limpio, sin contenido de recursos, secretos ni resultados transitorios. |
 
 Consulta [yaml-catalog.md](05-yaml-catalog.es.md) para esquema, errores y ejemplos.
 
@@ -100,4 +124,4 @@ Consulta [yaml-catalog.md](05-yaml-catalog.es.md) para esquema, errores y ejempl
 - Fechas: ISO 8601 UTC.
 - Identificadores internos: UUID salvo `Service.id` (slug).
 - Mutaciones: actor, source y correlation ID siempre auditables.
-- Campos de configuración: validación Pydantic discriminada por `action_type`; cualquier campo secreto es inválido.
+- Campos de configuración: validación Pydantic discriminada por el tipo de conector; las credenciales son siempre referencias a recursos, nunca valores.

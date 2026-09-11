@@ -1,3 +1,3 @@
-from .catalog import Catalog
+from .catalog import Catalog, ServiceDefinition
 
-__all__ = ["Catalog"]
+__all__ = ["Catalog", "ServiceDefinition"]

@@ -120,20 +120,29 @@ make migrate
 
 Test restores periodically in an isolated environment. Redis is not a source of truth: it can be flushed, and caches/queue regenerate according to the execution policy, but review in-flight executions before doing so.
 
+## Resources and the Master Key
+
+Integration credentials (Portainer and Prometheus tokens, SSH keys, `known_hosts`, Vault passwords) are catalog resources encrypted with the `resources_master_key` Docker secret — see [ADR 008](adr/008-connectors-and-resources.en.md). The API refuses to start without it.
+
+1. Generate it once — a Fernet key, 32 random bytes in URL-safe base64:
+
+   ```bash
+   python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())' > secrets/resources_master_key
+   chmod 644 secrets/resources_master_key
+   ```
+
+   Keep an offline, encrypted backup of it: without the key, every stored resource is unrecoverable and has to be uploaded again.
+2. Provide each resource's content in one of three ways: upload it in **Catalog → Resources** (nothing touches the disk); put files under `./resources/` — mounted read-only on the API only, at `CAPATAZ_RESOURCES_DIR=/run/capataz-resources` — and reference them with `source: {file: name}`; or pass them as API environment variables with `source: {env: VAR}`. Once an import has stored them, the files can be removed from `./resources/`.
+3. **Rotating the master key:** put the new key on the **first** line of `secrets/resources_master_key` and keep the old one below it (the first line encrypts, every line decrypts), recreate `api` and `runner`, and re-encrypt: re-import the catalog (the keyed fingerprint changes with the key, so every `file`/`env` resource is rewritten) and use **Replace content** for resources uploaded from the UI. Only then remove the old line and recreate both services again.
+
 ## Portainer Token
 
-Capataz calls the Portainer API (`X-API-Key`) for per-container status and, from the runner, for the allow-listed `portainer`-type actions. The token lives in `secrets/portainer_token` (see README) and is read in `infrastructure/secrets/file_secret_reader.py`.
+Capataz calls the Portainer API (`X-API-Key`) for per-container status and, from the runner, for the allow-listed actions of `portainer` connectors. The token is a `secret` resource referenced by the connector's `token` field.
 
 1. In Portainer, create a dedicated user for Capataz (don't reuse your personal admin account) and restrict its access, via **Teams**/**Environment access**, only to the environments (endpoints) Capataz must query or operate.
 2. Sign in with that user and go to **My account** (user icon, top right) → **Access tokens**.
 3. **Add access token**: give it a recognizable description (e.g. `capataz-api`) so it can be unambiguously revoked later.
-4. Portainer shows the token in plain text **only once**. Copy it immediately:
-
-   ```bash
-   echo 'GENERATED_TOKEN' > secrets/portainer_token
-   chmod 600 secrets/portainer_token
-   docker compose up -d --no-deps --force-recreate api runner
-   ```
+4. Portainer shows the token in plain text **only once**. Store it right away as a resource: **Catalog → Resources → New resource** (type *Secret*, paste the token) and select it as the Portainer connector's token — or save it as `resources/portainer_token` and reference it from the catalog with `source: {file: portainer_token}`. No restart is needed: the next status refresh uses it.
 
 5. Verify: `docker compose logs -f api` should not show `Portainer authentication was rejected`, and a service card with containers from that environment should go from "Unknown" to a real status after clicking "Refresh status".
 
@@ -146,14 +155,15 @@ This token requires a separate Portainer user with permissions already restricte
 3. Restart only the consumers: `docker compose up -d --force-recreate api runner` (and `postgres`/`redis` when rotating their password).
 4. Verify `/health/ready`, logs, and a read operation; revoke the previous value at the provider.
 
-For PostgreSQL/Redis passwords, rotation also requires changing the database's/broker's internal credential in a coordinated way. For Portainer, scope the token to the necessary environment and operations; the runner only receives `portainer_token` because it executes platform actions. Cognito only reaches `api`. Never rotate a personal SSH key: use a dedicated automation account and a pinned `known_hosts`.
+For PostgreSQL/Redis passwords, rotation also requires changing the database's/broker's internal credential in a coordinated way. For Portainer, scope the token to the necessary environment and operations, and rotate it with **Replace content** on its resource — no restart needed; the same goes for SSH keys, `known_hosts` and Vault passwords. Cognito only reaches `api`. Never rotate a personal SSH key: use a dedicated automation account and a pinned `known_hosts` (see [Security](06-security.en.md#ssh-sudo-and-ansible)).
 
 ## Catalog Management
 
 - Before importing: `POST /api/v1/catalog/import` with `{"yaml":"...","dry_run":true}` or the admin interface to get line/field errors.
 - Real import: `make seed-catalog` uses the authenticated endpoint (defaults to local `dev_mock` mode). With Cognito, export `API_AUTHORIZATION='Bearer <token>'` when invoking Make; the API does a transactional upsert by the service's logical `id`, and the ID is not reused for a different service.
 - Export: `make export-catalog > catalog/export.yaml`; review it and remove any metadata that shouldn't be versioned.
-- Startup: `CAPATAZ_INITIAL_CATALOG_YAML_PATH=/app/catalog/services.example.yaml` mounts and imports the example catalog. If the path exists but is invalid, or is missing, readiness must fail with a clear message; it is not ignored.
+- Startup: `CAPATAZ_INITIAL_CATALOG_YAML_PATH=/app/catalog/services.example.yaml` mounts and imports the example catalog. If the path exists but is invalid, or is missing, readiness must fail with a clear message; it is not ignored. Resource `file` sources are read from the API container's `CAPATAZ_RESOURCES_DIR`.
+- A `version: 1` catalog is rejected: convert it with `uv run --project api python scripts/convert_catalog_v1_to_v2.py old.yaml -o new.yaml` and dry-run the result (see [YAML Catalog](05-yaml-catalog.en.md#converting-a-v1-catalog)).
 
 ## Monitoring and Logs
 
@@ -168,5 +178,7 @@ Grafana and Loki are used via declared deep-links. Measure at minimum process he
 3. Back up PostgreSQL, export the catalog, and note the current image versions (`docker compose images`).
 4. In production: `make build && make up && make migrate`; watch healthchecks and one harmless `read` action.
 5. If it fails, revert to the previous image tags/commit and run `docker compose up -d`. Migrations must be expand/contract; if a migration isn't reversible, restore the backup according to the release plan.
+
+**Upgrading to catalog v2 ([ADR 008](adr/008-connectors-and-resources.en.md))** runs migration `0009`, which is irreversible: the backup of step 3 is mandatory, and restoring it (with the previous images) is the only rollback. Before starting the new images, create `secrets/resources_master_key`, put the old credentials under `./resources/` with their former secret names (`portainer_token`, `runner_ssh_private_key`, `runner_known_hosts`, `ansible_vault_password`), and convert the catalog to v2; the migration creates placeholder connectors that the v2 import then replaces.
 
 Don't use `make clean` as a normal operation: it deletes volumes after confirmation and is reserved for disposable development use.

@@ -262,6 +262,15 @@ textarea {
   font-size: 10px;
   color: var(--color-text-muted);
 }
+// Catalog tags (dashboard filter), shown as small chips under the title.
+.card-row-tags {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: var(--space-1);
+}
+.card-tag {
+  margin: 0 var(--space-1) 0 0;
+}
 // Row 3: as many admin-declared catalog metrics as the service has, 2 per row (label on top,
 // value below), wrapping into further rows automatically.
 .card-row-metrics {

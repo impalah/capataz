@@ -15,8 +15,8 @@ help: ## Lista los objetivos disponibles
 
 bootstrap: ## Copia .env.example y prepara directorios locales (no crea secretos)
 	@test -f .env || cp .env.example .env
-	@mkdir -p secrets catalog
-	@touch secrets/.gitkeep
+	@mkdir -p secrets resources catalog
+	@touch secrets/.gitkeep resources/.gitkeep
 	@echo "Configuración creada. Genera los secretos siguiendo README.md antes de usar Compose."
 
 trust-ca: ## Descarga tu CA interna (CA_URL) y genera certs/ca-bundle.pem para api/runner
@@ -51,8 +51,13 @@ test-unit: ## Ejecuta tests unitarios backend, runner y frontend
 test-integration: ## Ejecuta integración del backend
 	$(MAKE) -C api test-integration
 
-test-e2e: ## Ejecuta Playwright contra el stack de pruebas
+test-e2e: ## Ejecuta Playwright contra el stack de pruebas (ver docs/03-development.es.md)
 	$(COMPOSE) $(COMPOSE_FILES) up -d --build
+	@# La API aplica las migraciones e importa el catálogo al arrancar: Playwright no debe empezar
+	@# hasta que /health/ready responda, o los primeros tests fallan de forma intermitente.
+	@echo "Esperando a que la API esté lista (http://localhost:8000/health/ready)..."
+	@for i in $$(seq 1 90); do curl -fsS http://localhost:8000/health/ready >/dev/null 2>&1 && exit 0; sleep 2; done; \
+		echo "La API no está lista tras 180 s; revisa: $(COMPOSE) $(COMPOSE_FILES) logs api" >&2; exit 1
 	$(MAKE) -C frontend e2e
 
 lint: ## Ejecuta linters de los tres proyectos

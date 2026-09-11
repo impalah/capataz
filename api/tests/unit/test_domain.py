@@ -2,6 +2,24 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from fakes import (
+    FakeConnectorFactory,
+    FakeMetrics,
+    FakePlatform,
+    FakeProber,
+    InMemoryServiceRepository,
+    ansible_connector,
+    grafana_connector,
+    loki_connector,
+    make_action,
+    make_cipher,
+    make_service,
+    portainer_connector,
+    prometheus_connector,
+    runtime,
+    seed_connectors,
+    ssh_connector,
+)
 
 from capataz_api.adapters.outbound.health import validate_health_url
 from capataz_api.application.policies import (
@@ -13,9 +31,8 @@ from capataz_api.application.policies import (
     sanitize,
 )
 from capataz_api.application.policies.rbac import ROLE_ADMIN, ROLE_OPERATOR
-from capataz_api.application.services.catalog import parse_catalog_yaml, upsert_catalog
-from capataz_api.application.services.status import StatusService
-from capataz_api.domain.entities import ActionDefinition, Execution, Principal, Service
+from capataz_api.application.services import ConnectorResolver, StatusService
+from capataz_api.domain.entities import Execution, Principal, Service
 from capataz_api.domain.exceptions import (
     AuthorizationError,
     ConfigurationError,
@@ -32,32 +49,7 @@ from capataz_api.domain.value_objects import (
 )
 from capataz_api.infrastructure.secrets import FileSecretReader
 
-
-class FakeRepo:
-    def __init__(self) -> None:
-        self.services: dict[str, Service] = {}
-        self.actions: dict[tuple[str, str], ActionDefinition] = {}
-
-    async def get_service(self, service_id: str) -> Service | None:
-        return self.services.get(service_id)
-
-    async def upsert_service(self, item: Service) -> Service:
-        self.services[item.id] = item
-        return item
-
-    async def upsert_action(self, item: ActionDefinition) -> ActionDefinition:
-        self.actions[(item.service_id, item.key)] = item
-        return item
-
-
-def service() -> Service:
-    return Service(
-        id="open-webui",
-        name="Open WebUI",
-        group_name="AI",
-        environment="homelab",
-        container_selectors={"containers": [{"name": "open-webui"}]},
-    )
+HEALTH = {"connector": "http", "url": "https://openwebui.home.arpa/health"}
 
 
 def test_aggregate_status_rules() -> None:
@@ -87,129 +79,59 @@ def test_aggregate_status_any_healthy_survives_all_required_containers_being_dow
     assert aggregate_status(observations, None, aggregation="all_required") == ServiceStatus.DOWN
 
 
-def test_catalog_validation_and_no_free_command() -> None:
-    raw = """version: 1
-services:
-  - id: open-webui
-    name: Open WebUI
-    group_name: AI
-    environment: homelab
-    actions:
-      - key: restart
-        label: Restart
-        action_type: portainer
-        risk_level: operate
-        config: {operation: restart, target: selected_containers}
-"""
-    assert parse_catalog_yaml(raw).services[0].id == "open-webui"
-    invalid = raw.replace("operation: restart, target: selected_containers", "command: rm -rf /")
-    with pytest.raises(ValidationError) as excinfo:
-        parse_catalog_yaml(invalid)
-    (field_error,) = excinfo.value.field_errors
-    assert field_error.path == "services.0.actions.0"
-    assert field_error.line == 8  # the "- key: restart" line the bad action block starts at
+# --- StatusService --------------------------------------------------------------------------------
 
 
-def test_catalog_rejects_an_unknown_metrics_provider_type() -> None:
-    raw = """version: 1
-services:
-  - id: open-webui
-    name: Open WebUI
-    group_name: AI
-    environment: homelab
-    metrics:
-      - label: CPU
-        type: netdata
-        query: whatever
-"""
-    with pytest.raises(ValidationError):
-        parse_catalog_yaml(raw)
-
-
-def test_catalog_rejects_extra_portainer_config_keys() -> None:
-    raw = """version: 1
-services:
-  - id: open-webui
-    name: Open WebUI
-    group_name: AI
-    environment: homelab
-    actions:
-      - key: restart
-        label: Restart
-        action_type: portainer
-        risk_level: operate
-        config: {operation: restart, target: selected_containers, extra: nope}
-"""
-    with pytest.raises(ValidationError):
-        parse_catalog_yaml(raw)
+async def _refresh(
+    service: Service, factory: FakeConnectorFactory, repo: InMemoryServiceRepository | None = None
+) -> dict[str, object]:
+    if repo is None:
+        repo = InMemoryServiceRepository()
+        seed_connectors(repo)
+    return await StatusService(factory).refresh(service, ConnectorResolver(repo, make_cipher()))
 
 
 @pytest.mark.asyncio
-async def test_catalog_upsert_is_idempotent() -> None:
-    repo = FakeRepo()
-    catalog = parse_catalog_yaml("""version: 1
-services:
-  - id: one
-    name: One
-    group_name: G
-    environment: dev
-    actions: []
-""")
-    first = await upsert_catalog(repo, catalog)
-    second = await upsert_catalog(repo, catalog)
-    assert list(repo.services) == ["one"]
-    assert (first.created, first.updated) == (1, 0)
-    assert (second.created, second.updated) == (0, 1)
+async def test_status_service_refreshes_through_the_runtime_and_health_connectors() -> None:
+    platform = FakePlatform(rows=[{"name": "open-webui", "running": True, "healthy": True}])
+    prober = FakeProber(healthy=True)
+    factory = FakeConnectorFactory(platform=platform, prober=prober)
+    item = make_service(runtime=runtime(), observability={"health": HEALTH})
 
+    result = await _refresh(item, factory)
 
-@pytest.mark.asyncio
-async def test_status_service_refreshes() -> None:
-    class Platform:
-        async def container_states(
-            self, environment_id: str, selectors: dict[str, object]
-        ) -> list[dict[str, object]]:
-            return [{"name": "open-webui", "running": True, "healthy": True}]
-
-        async def find_link_target(
-            self, environment_id: str, selectors: dict[str, object]
-        ) -> str | None:
-            return None
-
-    class Prober:
-        async def probe(self, config: dict[str, object]) -> bool:
-            return True
-
-    item = service()
-    item.portainer_environment_id = "1"
-    item.health_config = {"url": "https://openwebui.home.arpa/health"}
-    status = StatusService(Platform(), Prober(), None)
-    result = await status.refresh(item)
     assert result["status"] == "healthy"
     assert result["service_id"] == "open-webui"
+    assert platform.calls == [
+        (
+            "7",
+            {
+                "containers": [{"name": "open-webui", "required": True, "critical": False}],
+                "aggregation": "all_required",
+                "stack_name": None,
+            },
+        )
+    ]
+    # The portainer token resource was decrypted and stripped of its trailing newline.
+    assert factory.secrets_seen == [{"token": "pt-secret"}]
+    assert prober.configs == [
+        {
+            "connector": "http",
+            "url": "https://openwebui.home.arpa/health",
+            "method": "GET",
+            "expected_status": 200,
+            "timeout_seconds": 5,
+        }
+    ]
 
 
 @pytest.mark.asyncio
 async def test_status_service_surfaces_portainer_failure_without_hiding_health_probe() -> None:
-    class FailingPlatform:
-        async def container_states(
-            self, environment_id: str, selectors: dict[str, object]
-        ) -> list[dict[str, object]]:
-            raise ExternalServiceError("Portainer authentication was rejected")
-
-        async def find_link_target(
-            self, environment_id: str, selectors: dict[str, object]
-        ) -> str | None:
-            return None
-
-    class Prober:
-        async def probe(self, config: dict[str, object]) -> bool:
-            return True
-
-    item = service()
-    item.portainer_environment_id = "1"
-    item.health_config = {"url": "https://openwebui.home.arpa/health"}
-    status = StatusService(FailingPlatform(), Prober(), None)
-    result = await status.refresh(item)
+    factory = FakeConnectorFactory(
+        platform=FakePlatform(error=ExternalServiceError("Portainer authentication was rejected"))
+    )
+    item = make_service(runtime=runtime(), observability={"health": HEALTH})
+    result = await _refresh(item, factory)
     assert result["error"] == "Portainer authentication was rejected"
     assert result["external_healthy"] is True
     assert result["containers"] == []
@@ -217,80 +139,87 @@ async def test_status_service_surfaces_portainer_failure_without_hiding_health_p
 
 @pytest.mark.asyncio
 async def test_status_service_reports_unexpected_errors_without_leaking_internals() -> None:
-    class BuggyPlatform:
-        async def container_states(
-            self, environment_id: str, selectors: dict[str, object]
-        ) -> list[dict[str, object]]:
-            raise RuntimeError("boom: /internal/path leaked")
-
-        async def find_link_target(
-            self, environment_id: str, selectors: dict[str, object]
-        ) -> str | None:
-            return None
-
-    item = service()
-    item.portainer_environment_id = "1"
-    status = StatusService(BuggyPlatform(), None, None)
-    result = await status.refresh(item)
+    factory = FakeConnectorFactory(platform=FakePlatform(error=RuntimeError("boom: /internal")))
+    result = await _refresh(make_service(runtime=runtime()), factory)
     assert result["error"] == "Unexpected error checking Portainer status"
-    assert "boom" not in result["error"]
+    assert "boom" not in str(result["error"])
+
+
+@pytest.mark.asyncio
+async def test_status_service_reports_a_missing_connector_or_resource_as_unavailable() -> None:
+    missing_connector = await _refresh(
+        make_service(runtime=runtime(connector="ghost")), FakeConnectorFactory()
+    )
+    assert missing_connector["status"] == "unknown"
+    assert missing_connector["error"] == "Connector 'ghost' does not exist"
+
+    repo = InMemoryServiceRepository()
+    seed_connectors(repo)
+    del repo.resources["portainer_token"]
+    missing_resource = await _refresh(make_service(runtime=runtime()), FakeConnectorFactory(), repo)
+    assert "Resource 'portainer_token'" in str(missing_resource["error"])
 
 
 @pytest.mark.asyncio
 async def test_status_service_includes_metrics_when_the_service_declares_them() -> None:
-    class MetricsProvider:
-        async def query(self, definitions: list[dict[str, object]]) -> list[dict[str, object]]:
-            return [{"label": d["label"], "value": 42.0} for d in definitions]
-
-    item = service()
-    item.metrics_config = [{"label": "CPU", "type": "prometheus", "query": "up"}]
-    status = StatusService(None, None, MetricsProvider())
-
-    result = await status.refresh(item)
-
+    factory = FakeConnectorFactory(metrics=FakeMetrics(value=42.0))
+    item = make_service(
+        observability={"metrics": [{"label": "CPU", "connector": "prometheus", "query": "up"}]}
+    )
+    result = await _refresh(item, factory)
     assert result["metrics"] == [{"label": "CPU", "value": 42.0}]
 
 
 @pytest.mark.asyncio
 async def test_status_service_omits_metrics_key_when_the_service_declares_none() -> None:
-    class MetricsProvider:
-        async def query(self, definitions: list[dict[str, object]]) -> list[dict[str, object]]:
-            raise AssertionError("must not be called when metrics_config is empty")
-
-    item = service()
-    status = StatusService(None, None, MetricsProvider())
-
-    result = await status.refresh(item)
-
+    result = await _refresh(
+        make_service(), FakeConnectorFactory(metrics=FakeMetrics(error=AssertionError()))
+    )
     assert "metrics" not in result
 
 
 @pytest.mark.asyncio
-async def test_status_service_metrics_failure_does_not_hide_status_or_containers() -> None:
-    class Platform:
-        async def container_states(
-            self, environment_id: str, selectors: dict[str, object]
-        ) -> list[dict[str, object]]:
-            return [{"name": "open-webui", "running": True, "healthy": True}]
+async def test_a_failing_metrics_connector_only_blanks_its_own_metrics() -> None:
+    repo = InMemoryServiceRepository()
+    seed_connectors(repo)
+    repo.connectors["prom_broken"] = prometheus_connector("prom_broken")
+    factory = FakeConnectorFactory(
+        platform=FakePlatform(rows=[{"name": "open-webui", "running": True, "healthy": True}]),
+        metrics={
+            "prometheus": FakeMetrics(value=7.0),
+            "prom_broken": FakeMetrics(error=RuntimeError("Prometheus is unreachable")),
+        },
+    )
+    item = make_service(
+        runtime=runtime(),
+        observability={
+            "metrics": [
+                {"label": "CPU", "connector": "prometheus", "query": "cpu"},
+                {"label": "GPU", "connector": "prom_broken", "query": "gpu"},
+                {"label": "Mem", "connector": "prometheus", "query": "mem"},
+            ]
+        },
+    )
 
-        async def find_link_target(
-            self, environment_id: str, selectors: dict[str, object]
-        ) -> str | None:
-            return None
-
-    class BuggyMetricsProvider:
-        async def query(self, definitions: list[dict[str, object]]) -> list[dict[str, object]]:
-            raise RuntimeError("Prometheus is unreachable")
-
-    item = service()
-    item.portainer_environment_id = "1"
-    item.metrics_config = [{"label": "CPU", "type": "prometheus", "query": "up"}]
-    status = StatusService(Platform(), None, BuggyMetricsProvider())
-
-    result = await status.refresh(item)
+    result = await _refresh(item, factory, repo)
 
     assert result["status"] == "healthy"
-    assert "metrics" not in result
+    assert result["metrics"] == [
+        {"label": "CPU", "value": 7.0},
+        {"label": "GPU", "value": None},
+        {"label": "Mem", "value": 7.0},
+    ]
+    # Metrics on the same connector go out in one provider call, in declaration order.
+    assert [
+        [d["query"] for d in batch] for batch in factory.metrics_fakes["prometheus"].queries
+    ] == [["cpu", "mem"]]
+
+
+# --- resolve_action -------------------------------------------------------------------------------
+
+
+def _containers_service() -> Service:
+    return make_service(runtime=runtime())
 
 
 def test_rbac_risk_and_allowlisted_action_resolution() -> None:
@@ -301,84 +230,107 @@ def test_rbac_risk_and_allowlisted_action_resolution() -> None:
         authorize_action(operator, RiskLevel.CRITICAL, True, "reason")
     with pytest.raises(AuthorizationError):
         authorize_action(admin, RiskLevel.CRITICAL, True, None)
-    action = ActionDefinition(
-        service_id="open-webui",
-        key="restart",
-        label="Restart",
-        action_type=ActionType.PORTAINER,
-        risk_level=RiskLevel.OPERATE,
-        config={"operation": "restart", "target": "selected_containers"},
-        allowed_parameters_schema={"properties": {"mode": {"enum": ["safe"]}}},
+    action = make_action(allowed_parameters_schema={"properties": {"mode": {"enum": ["safe"]}}})
+    resolved = resolve_action(
+        _containers_service(), action, {"mode": "safe"}, portainer_connector()
     )
-    assert resolve_action(service(), action, {"mode": "safe"})["config"]["operation"] == "restart"
+    assert resolved["config"]["operation"] == "restart"
     with pytest.raises(ValidationError):
-        resolve_action(service(), action, {"container_id": "untrusted"})
+        resolve_action(
+            _containers_service(), action, {"container_id": "untrusted"}, portainer_connector()
+        )
 
 
 def test_resolve_action_rejects_extra_portainer_keys_and_distinguishes_errors() -> None:
-    action = ActionDefinition(
-        service_id="open-webui",
-        key="restart",
-        label="Restart",
-        action_type=ActionType.PORTAINER,
-        risk_level=RiskLevel.OPERATE,
-        config={"operation": "restart", "target": "selected_containers", "extra": "nope"},
+    extra = make_action(
+        config={"operation": "restart", "target": "selected_containers", "extra": "nope"}
     )
-    with pytest.raises(ValidationError, match="must contain only operation and target"):
-        resolve_action(service(), action, {})
+    with pytest.raises(ValidationError, match="Invalid action config"):
+        resolve_action(_containers_service(), extra, {}, portainer_connector())
 
-    disabled = ActionDefinition(
-        service_id="open-webui",
-        key="restart",
-        label="Restart",
-        action_type=ActionType.PORTAINER,
-        risk_level=RiskLevel.OPERATE,
-        enabled=False,
-        config={"operation": "restart", "target": "selected_containers"},
-    )
     with pytest.raises(ValidationError, match="not enabled"):
-        resolve_action(service(), disabled, {})
+        resolve_action(_containers_service(), make_action(enabled=False), {}, portainer_connector())
 
-    wrong_service = ActionDefinition(
-        service_id="other-service",
-        key="restart",
-        label="Restart",
-        action_type=ActionType.PORTAINER,
-        risk_level=RiskLevel.OPERATE,
-        config={"operation": "restart", "target": "selected_containers"},
-    )
     with pytest.raises(ValidationError, match="does not belong to this service"):
-        resolve_action(service(), wrong_service, {})
+        resolve_action(
+            _containers_service(),
+            make_action(service_id="other-service"),
+            {},
+            portainer_connector(),
+        )
 
 
 def test_resolve_action_accepts_selected_services_for_a_swarm_service() -> None:
-    swarm_service = Service(
-        id="authentik",
-        name="Authentik",
-        group_name="Security",
-        environment="homelab",
-        container_selectors={"services": [{"name": "authentik-server"}]},
+    swarm = make_service(
+        "authentik",
+        runtime=runtime(kind="services", names=("authentik-server",), stack_name="authentik"),
     )
-    action = ActionDefinition(
-        service_id="authentik",
-        key="restart",
-        label="Restart",
-        action_type=ActionType.PORTAINER,
-        risk_level=RiskLevel.OPERATE,
-        config={"operation": "restart", "target": "selected_services"},
+    action = make_action(
+        "authentik", config={"operation": "restart", "target": "selected_services"}
     )
-    assert resolve_action(swarm_service, action, {})["config"]["target"] == "selected_services"
+    resolved = resolve_action(swarm, action, {}, portainer_connector())
+    assert resolved["config"]["target"] == "selected_services"
 
-    mismatched = ActionDefinition(
-        service_id="authentik",
-        key="restart",
-        label="Restart",
-        action_type=ActionType.PORTAINER,
-        risk_level=RiskLevel.OPERATE,
-        config={"operation": "restart", "target": "selected_containers"},
-    )
+    mismatched = make_action("authentik")
     with pytest.raises(ValidationError, match="declared selector kind"):
-        resolve_action(swarm_service, mismatched, {})
+        resolve_action(swarm, mismatched, {}, portainer_connector())
+
+
+def test_portainer_actions_must_use_the_services_runtime_connector() -> None:
+    action = make_action(connector_id="portainer_other")
+    with pytest.raises(ValidationError, match="runtime connector"):
+        resolve_action(_containers_service(), action, {}, portainer_connector("portainer_other"))
+
+
+def test_resolve_action_rejects_type_and_capability_mismatches() -> None:
+    with pytest.raises(ValidationError, match="does not match its connector type"):
+        resolve_action(
+            _containers_service(),
+            make_action(action_type=ActionType.ANSIBLE),
+            {},
+            portainer_connector(),
+        )
+    with pytest.raises(ValidationError, match="does not support actions"):
+        resolve_action(
+            _containers_service(),
+            make_action(connector_id="grafana"),
+            {},
+            grafana_connector(),
+        )
+    with pytest.raises(ValidationError, match="does not match the action definition"):
+        resolve_action(_containers_service(), make_action(), {}, ssh_connector())
+
+
+def test_ssh_and_ansible_actions_only_accept_their_own_config_shapes() -> None:
+    ssh_action = make_action(
+        key="disk",
+        connector_id="ssh_mole",
+        action_type=ActionType.SSH,
+        config={"command_id": "disk_usage", "params": {"path": "/srv"}},
+    )
+    resolved = resolve_action(_containers_service(), ssh_action, {}, ssh_connector())
+    assert resolved["config"] == {"command_id": "disk_usage", "params": {"path": "/srv"}}
+
+    free_text = make_action(
+        key="disk",
+        connector_id="ssh_mole",
+        action_type=ActionType.SSH,
+        config={"command_id": "ping -c 4 host"},
+    )
+    with pytest.raises(ValidationError, match="Invalid action config"):
+        resolve_action(_containers_service(), free_text, {}, ssh_connector())
+
+    ansible_action = make_action(
+        key="backup",
+        connector_id="ansible_homelab",
+        action_type=ActionType.ANSIBLE,
+        config={"playbook": "playbooks/backup_service.yml", "limit": "node-ai-01"},
+    )
+    resolved = resolve_action(_containers_service(), ansible_action, {}, ansible_connector())
+    assert resolved["config"]["timeout_seconds"] == 300
+
+
+# --- misc domain behaviour ----------------------------------------------------------------------
 
 
 def test_execution_transition_and_sanitization() -> None:
@@ -402,29 +354,102 @@ def test_execution_transition_and_sanitization() -> None:
     }
 
 
-def test_links_ssrf_and_secrets(tmp_path: Path) -> None:
-    item = service()
-    item.service_url = "https://openwebui.home.arpa"
-    item.grafana_config = {
-        "dashboard_uid": "containers",
-        "variables": {"var-service": "open webui"},
-    }
-    item.loki_config = {"query": '{service="open-webui"}'}
-    item.portainer_environment_id = "1"
-    links = resolve_links(
-        item,
-        "https://portainer.home.arpa",
-        "https://grafana.home.arpa",
-        "https://loki.home.arpa",
-    )
-    assert "var-service=open+webui" in links["grafana"] and "portainer" in links
-    assert links["portainer"].endswith("/docker/containers")
+# --- links ----------------------------------------------------------------------------------------
 
-    swarm_item = service()
-    swarm_item.container_selectors = {"services": [{"name": "authentik-server"}]}
-    swarm_item.portainer_environment_id = "7"
-    swarm_links = resolve_links(swarm_item, "https://portainer.home.arpa", None, None)
-    assert swarm_links["portainer"].endswith("/docker/services")
+
+def _connectors(*extra: object) -> dict[str, object]:
+    items = [portainer_connector(), grafana_connector(), loki_connector(), *extra]
+    return {item.id: item for item in items}  # type: ignore[attr-defined]
+
+
+def test_links_are_built_from_the_referenced_connectors() -> None:
+    item = make_service(
+        service_url="https://openwebui.home.arpa",
+        runtime=runtime(environment_id="1"),
+        observability={
+            "dashboards": [
+                {
+                    "connector": "grafana",
+                    "uid": "containers",
+                    "variables": {"var-service": "open webui"},
+                }
+            ],
+            "logs": {"connector": "loki", "query": '{service="open-webui"}'},
+        },
+    )
+    links = resolve_links(item, _connectors())  # type: ignore[arg-type]
+    assert links["service"] == "https://openwebui.home.arpa/"
+    assert links["grafana"] == "https://grafana.home.arpa/d/containers?var-service=open+webui"
+    assert links["portainer"] == "https://portainer.home.arpa/#!/1/docker/containers"
+    assert links["loki"].startswith("https://loki.home.arpa/explore?left=")
+
+    swarm = make_service(runtime=runtime(kind="services", names=("authentik-server",)))
+    assert resolve_links(swarm, _connectors())["portainer"].endswith("/docker/services")  # type: ignore[arg-type]
+
+
+def test_grafana_link_uses_uid_slug_and_extra_query_params() -> None:
+    item = make_service(
+        observability={
+            "dashboards": [
+                {
+                    "connector": "grafana",
+                    "uid": "homelab-generic",
+                    "slug": "generic-service",
+                    "variables": {"var-service": "bifrost", "kiosk": "tv"},
+                }
+            ]
+        }
+    )
+    assert resolve_links(item, _connectors())["grafana"] == (  # type: ignore[arg-type]
+        "https://grafana.home.arpa/d/homelab-generic/generic-service?var-service=bifrost&kiosk=tv"
+    )
+
+
+def test_each_dashboard_is_keyed_by_label_and_can_use_its_own_grafana() -> None:
+    alt = grafana_connector("grafana_gpu", url="https://grafana-gpu.home.arpa")
+    item = make_service(
+        observability={
+            "dashboards": [
+                {"connector": "grafana", "uid": "containers"},
+                {"label": "GPU", "connector": "grafana_gpu", "uid": "gpu"},
+            ]
+        }
+    )
+    links = resolve_links(item, _connectors(alt))  # type: ignore[arg-type]
+    assert links["grafana"] == "https://grafana.home.arpa/d/containers"
+    assert links["GPU"] == "https://grafana-gpu.home.arpa/d/gpu"
+
+
+def test_grafana_link_prefers_an_explicit_url_over_uid_and_variables() -> None:
+    absolute = make_service(
+        observability={
+            "dashboards": [
+                {
+                    "connector": "grafana",
+                    "uid": "ignored",
+                    "variables": {"var-service": "ignored"},
+                    "url": "https://grafana.home.arpa/d/containers/x?kiosk=tv",
+                }
+            ]
+        }
+    )
+    relative = make_service(
+        observability={"dashboards": [{"connector": "grafana", "url": "d/containers/x?kiosk=tv"}]}
+    )
+    expected = "https://grafana.home.arpa/d/containers/x?kiosk=tv"
+    assert resolve_links(absolute, _connectors())["grafana"] == expected  # type: ignore[arg-type]
+    assert resolve_links(relative, _connectors())["grafana"] == expected  # type: ignore[arg-type]
+
+
+def test_links_skip_missing_or_wrongly_typed_connectors() -> None:
+    item = make_service(
+        runtime=runtime(connector="ghost"),
+        observability={"dashboards": [{"connector": "loki", "uid": "x"}]},
+    )
+    assert resolve_links(item, _connectors()) == {}  # type: ignore[arg-type]
+
+
+def test_ssrf_validation_and_file_secrets(tmp_path: Path) -> None:
     validate_health_url("https://openwebui.home.arpa/health", (".home.arpa",))
     with pytest.raises(ValidationError):
         validate_health_url("http://127.0.0.1/", (".home.arpa",))
@@ -432,44 +457,6 @@ def test_links_ssrf_and_secrets(tmp_path: Path) -> None:
     assert FileSecretReader(tmp_path).read("postgres_password") == "value"
     with pytest.raises(ConfigurationError):
         FileSecretReader(tmp_path).read("missing")
-
-
-def test_grafana_link_accepts_slashed_uids_and_extra_query_params() -> None:
-    item = service()
-    item.grafana_config = {
-        "dashboard_uid": "homelab-generic/generic-service",
-        "variables": {"var-service": "bifrost", "kiosk": "tv"},
-    }
-    links = resolve_links(item, None, "https://grafana.home.arpa", None)
-    assert links["grafana"] == (
-        "https://grafana.home.arpa/d/homelab-generic/generic-service"
-        "?var-service=bifrost&kiosk=tv"
-    )
-
-
-def test_grafana_link_honors_a_per_service_base_url_override() -> None:
-    item = service()
-    item.grafana_config = {"dashboard_uid": "containers", "base_url": "https://grafana-alt.home.arpa"}
-    links = resolve_links(item, None, "https://grafana.home.arpa", None)
-    assert links["grafana"] == "https://grafana-alt.home.arpa/d/containers"
-
-
-def test_grafana_link_prefers_an_explicit_dashboard_url_over_uid_and_variables() -> None:
-    absolute = service()
-    absolute.grafana_config = {
-        "dashboard_uid": "ignored",
-        "variables": {"var-service": "ignored"},
-        "dashboard_url": "https://grafana.home.arpa/d/containers/x?kiosk=tv",
-    }
-    assert resolve_links(absolute, None, "https://grafana.home.arpa", None)["grafana"] == (
-        "https://grafana.home.arpa/d/containers/x?kiosk=tv"
-    )
-
-    relative = service()
-    relative.grafana_config = {"dashboard_url": "d/containers/x?kiosk=tv"}
-    assert resolve_links(relative, None, "https://grafana.home.arpa", None)["grafana"] == (
-        "https://grafana.home.arpa/d/containers/x?kiosk=tv"
-    )
 
 
 def test_file_secret_reader_warns_on_overly_permissive_mode(

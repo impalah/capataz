@@ -1,19 +1,56 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
+from conftest import TEST_MASTER_KEY
+from cryptography.fernet import Fernet
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from capataz_runner.models import (
     ActionDefinitionRecord,
     Base,
+    ConnectorRecord,
     ExecutionEventRecord,
     ExecutionRecord,
+    ResourceRecord,
     ServiceRecord,
 )
-from capataz_runner.ports import ExecutionResult
+from capataz_runner.ports import AutomationJob, ExecutionResult
+
+LOCAL_ANSIBLE = {
+    "inventory": "inventories/local.yml",
+    "private_key": "local_key",
+    "known_hosts": "local_known_hosts",
+}
+
+
+def _encrypt(content: bytes) -> bytes:
+    return Fernet(TEST_MASTER_KEY.encode()).encrypt(content)
+
+
+def _seed_service_and_connector(
+    session: Any,
+    *,
+    connector_type: str = "ansible",
+    connector_config: dict[str, Any] | None = None,
+    resources: dict[str, bytes] | None = None,
+) -> None:
+    session.add(
+        ServiceRecord(
+            id="service",
+            name="Service",
+            spec={"name": "Service", "runtime": {"environment_id": "1", "containers": []}},
+        )
+    )
+    session.add(
+        ConnectorRecord(id="local", type=connector_type, config=connector_config or LOCAL_ANSIBLE)
+    )
+    default_resources = {"local_key": b"KEY-MATERIAL\n", "local_known_hosts": b"kh\n"}
+    for resource_id, content in (resources if resources is not None else default_resources).items():
+        session.add(ResourceRecord(id=resource_id, type="file", ciphertext=_encrypt(content)))
 
 
 @pytest.mark.asyncio
@@ -30,21 +67,16 @@ async def test_task_processing_rehydrates_records_and_persists_events(secrets_di
         await connection.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
-        session.add(
-            ServiceRecord(id="service", name="Service", container_selectors={"names": ["service"]})
-        )
+        _seed_service_and_connector(session)
         session.add(
             ActionDefinitionRecord(
                 id="11111111-1111-1111-1111-111111111111",
                 service_id="service",
                 key="restart",
+                connector_id="local",
                 action_type="ansible",
                 enabled=True,
-                config={
-                    "playbook": "playbooks/restart_service.yml",
-                    "inventory": "inventories/local.yml",
-                    "limit": "local-mock",
-                },
+                config={"playbook": "playbooks/restart_service.yml", "limit": "local-mock"},
             )
         )
         session.add(
@@ -93,14 +125,13 @@ async def test_reap_stuck_executions_async_marks_and_logs_stale_running_rows(
         await connection.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
-        session.add(
-            ServiceRecord(id="service", name="Service", container_selectors={"names": ["service"]})
-        )
+        _seed_service_and_connector(session)
         session.add(
             ActionDefinitionRecord(
                 id="11111111-1111-1111-1111-111111111111",
                 service_id="service",
                 key="restart",
+                connector_id="local",
                 action_type="ansible",
                 enabled=True,
                 config={},
@@ -179,21 +210,16 @@ async def _seed_queued_execution(
     factory: async_sessionmaker[object], execution_id: str = "77777777-7777-7777-7777-777777777777"
 ) -> None:
     async with factory() as session:
-        session.add(
-            ServiceRecord(id="service", name="Service", container_selectors={"names": ["service"]})
-        )
+        _seed_service_and_connector(session)
         session.add(
             ActionDefinitionRecord(
                 id="11111111-1111-1111-1111-111111111111",
                 service_id="service",
                 key="restart",
+                connector_id="local",
                 action_type="ansible",
                 enabled=True,
-                config={
-                    "playbook": "playbooks/restart_service.yml",
-                    "inventory": "inventories/local.yml",
-                    "limit": "local-mock",
-                },
+                config={"playbook": "playbooks/restart_service.yml", "limit": "local-mock"},
             )
         )
         session.add(
@@ -334,7 +360,7 @@ async def test_process_execution_async_sanitizes_a_secret_embedded_in_an_unexpec
     await engine.dispose()
 
 
-def test_known_secrets_collects_all_four_credentials(secrets_dir: object) -> None:
+def test_known_secrets_collects_the_database_and_redis_credentials(secrets_dir: object) -> None:
     """CR-067: `_known_secrets` (introduced by CR-044) had no test of its own."""
     from capataz_runner.config import Settings
     from capataz_runner.tasks import _known_secrets
@@ -343,9 +369,7 @@ def test_known_secrets_collects_all_four_credentials(secrets_dir: object) -> Non
     secrets = _known_secrets(settings)
     assert settings.postgres_password.get_secret_value() in secrets
     assert settings.redis_password.get_secret_value() in secrets
-    assert settings.portainer_token.get_secret_value() in secrets
-    assert settings.ansible_vault_password.get_secret_value() in secrets
-    assert len(secrets) == 4
+    assert len(secrets) == 2
 
 
 def test_known_secrets_skips_a_getter_that_raises_instead_of_failing_outright(
@@ -416,3 +440,96 @@ async def test_process_execution_sync_wrapper_disposes_the_engine_before_returni
 
     assert result == "rejected"
     assert len(dispose_calls) == 1
+
+
+async def _load(
+    *,
+    connector_type: str = "ansible",
+    action_type: str = "ansible",
+    connector_config: dict[str, Any] | None = None,
+    resources: dict[str, bytes] | None = None,
+    ciphertext_override: bytes | None = None,
+) -> AutomationJob:
+    from capataz_runner.crypto import ResourceDecryptor
+    from capataz_runner.tasks import _load_job
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with factory() as session:
+            _seed_service_and_connector(
+                session,
+                connector_type=connector_type,
+                connector_config=connector_config,
+                resources=resources,
+            )
+            if ciphertext_override is not None:
+                await session.flush()
+                resource = await session.get(ResourceRecord, "local_key")
+                assert resource is not None
+                resource.ciphertext = ciphertext_override
+            session.add(
+                ActionDefinitionRecord(
+                    id="11111111-1111-1111-1111-111111111111",
+                    service_id="service",
+                    key="restart",
+                    connector_id="local",
+                    action_type=action_type,
+                    enabled=True,
+                    config={"playbook": "playbooks/restart_service.yml", "limit": "local-mock"},
+                )
+            )
+            session.add(
+                ExecutionRecord(
+                    id="99999999-9999-9999-9999-999999999999",
+                    service_id="service",
+                    action_definition_id="11111111-1111-1111-1111-111111111111",
+                    params={"service": "x"},
+                )
+            )
+            await session.commit()
+        async with factory() as session:
+            return await _load_job(
+                session,
+                "99999999-9999-9999-9999-999999999999",
+                ResourceDecryptor((TEST_MASTER_KEY,)),
+            )
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_load_job_decrypts_the_connector_resources_in_memory() -> None:
+    job = await _load()
+    assert job.action_type == "ansible"
+    assert job.connector_config == LOCAL_ANSIBLE
+    assert job.runtime == {"environment_id": "1", "containers": []}
+    assert job.params == {"service": "x"}
+    assert job.secrets == {"private_key": b"KEY-MATERIAL\n", "known_hosts": b"kh\n"}
+
+
+@pytest.mark.asyncio
+async def test_load_job_rejects_a_connector_whose_type_differs_from_the_action() -> None:
+    from capataz_runner.actions import ActionConfigurationError
+
+    with pytest.raises(ActionConfigurationError, match="does not match"):
+        await _load(connector_type="ssh")
+
+
+@pytest.mark.asyncio
+async def test_load_job_rejects_a_missing_resource() -> None:
+    from capataz_runner.actions import ActionConfigurationError
+
+    with pytest.raises(ActionConfigurationError, match="local_known_hosts"):
+        await _load(resources={"local_key": b"KEY"})
+
+
+@pytest.mark.asyncio
+async def test_load_job_turns_an_undecryptable_resource_into_a_rejection() -> None:
+    from capataz_runner.actions import ActionConfigurationError
+
+    wrong_key = Fernet(Fernet.generate_key()).encrypt(b"KEY")
+    with pytest.raises(ActionConfigurationError):
+        await _load(ciphertext_override=wrong_key)

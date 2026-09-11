@@ -10,6 +10,11 @@ export type ExecutionStatus =
   'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'timed_out' | 'rejected'
 export type ExecutionSource = 'ui' | 'api' | 'yaml' | 'n8n' | 'mcp' | 'cron' | 'alert' | 'system'
 export type Role = 'capataz-viewer' | 'capataz-operator' | 'capataz-admin'
+// Mirrors api/src/capataz_api/domain/specs/connectors.py (docs/adr/008-connectors-and-resources).
+export type ConnectorType = 'portainer' | 'prometheus' | 'grafana' | 'loki' | 'http' | 'ansible' | 'ssh'
+export type ConnectorCapability = 'status' | 'actions' | 'metrics' | 'health' | 'dashboards' | 'logs'
+export type ResourceType = 'secret' | 'ssh_private_key' | 'known_hosts' | 'file'
+export type Aggregation = 'all_required' | 'any_healthy'
 
 export interface ContainerStatus {
   name: string
@@ -29,11 +34,6 @@ export interface ServiceStatusResult {
   error?: string
   metrics?: MetricValue[]
 }
-export interface MetricDefinition {
-  label: string
-  type: 'prometheus'
-  query: string
-}
 export interface ContainerSelector {
   name: string
   required?: boolean
@@ -45,43 +45,58 @@ export interface ServiceSelector {
   required?: boolean
   critical?: boolean
 }
-export interface ContainerSelectors {
-  aggregation?: 'all_required' | 'any_healthy'
-  containers?: ContainerSelector[]
-  services?: ServiceSelector[]
+/** Where the service runs: a `status`-capable connector (Portainer) plus exactly one selector kind. */
+export interface RuntimeSpec {
+  connector: string
+  environment_id: string
+  stack_name?: string | null
+  aggregation?: Aggregation
+  containers?: ContainerSelector[] | null
+  services?: ServiceSelector[] | null
 }
-export interface HealthConfig {
-  type?: 'http' | 'tcp'
-  url?: string
+export interface HealthSpec {
+  connector: string
+  url: string
+  method?: 'GET' | 'HEAD'
   expected_status?: number
   timeout_seconds?: number
 }
-export interface GrafanaConfig {
-  dashboard_uid?: string
+export interface DashboardSpec {
+  label?: string
+  connector: string
+  uid?: string | null
+  slug?: string | null
+  url?: string | null
   variables?: Record<string, string>
-  base_url?: string
-  dashboard_url?: string
 }
-export interface LokiConfig {
-  query?: string
+export interface LogsSpec {
+  connector: string
+  query: string
+}
+export interface MetricSpec {
+  label: string
+  connector: string
+  query: string
+}
+export interface ObservabilitySpec {
+  health?: HealthSpec | null
+  dashboards?: DashboardSpec[]
+  logs?: LogsSpec | null
+  metrics?: MetricSpec[]
 }
 export interface Service {
   id: string
   name: string
-  description?: string
+  description?: string | null
   group_name: string
   environment: string
-  icon?: string
-  service_url?: string
-  documentation_url?: string
-  portainer_environment_id?: string
-  portainer_stack_name?: string
-  container_selectors?: ContainerSelectors
-  health_config?: HealthConfig
-  grafana_config?: GrafanaConfig
-  loki_config?: LokiConfig
-  metrics_config?: MetricDefinition[]
-  metadata?: Record<string, string>
+  icon?: string | null
+  tags?: string[]
+  service_url?: string | null
+  documentation_url?: string | null
+  runtime?: RuntimeSpec | null
+  observability?: ObservabilitySpec
+  metadata?: Record<string, unknown>
   maintenance?: boolean
   version?: number
 }
@@ -90,15 +105,69 @@ export interface ActionDefinition {
   service_id: string
   key: string
   label: string
-  description?: string
-  icon?: string
+  description?: string | null
+  icon?: string | null
+  /** Always the type of `connector`; read-only, derived by the API. */
   action_type: ActionType
+  connector: string
   risk_level: RiskLevel
   requires_confirmation: boolean
   enabled: boolean
   unattended?: boolean
   config: Record<string, unknown>
   allowed_parameters_schema?: Record<string, unknown>
+}
+/** Body of POST /services/{id}/actions and PATCH .../{key} (the API's ActionSpec). */
+export interface ActionInput {
+  key: string
+  label: string
+  description?: string | null
+  icon?: string | null
+  connector: string
+  risk_level: RiskLevel
+  requires_confirmation: boolean
+  enabled: boolean
+  unattended?: boolean
+  config: Record<string, unknown>
+  allowed_parameters_schema?: Record<string, unknown>
+}
+export interface Connector {
+  id: string
+  type: ConnectorType
+  description?: string | null
+  config: Record<string, unknown>
+  capabilities: ConnectorCapability[]
+  version: number
+  created_at?: string
+  updated_at?: string
+}
+export interface ConnectorInput {
+  id: string
+  type: ConnectorType
+  description?: string | null
+  config: Record<string, unknown>
+}
+/** Metadata only: the API never returns a resource's content. */
+export interface Resource {
+  id: string
+  type: ResourceType
+  description?: string | null
+  fingerprint: string
+  size: number
+  source: Record<string, unknown>
+  version: number
+  created_at?: string
+  updated_at?: string
+}
+export interface ResourceCreate {
+  id: string
+  type: ResourceType
+  description?: string | null
+  content_base64: string
+}
+export interface ResourceContentUpdate {
+  content_base64: string
+  description?: string | null
 }
 export interface ExecutionEvent {
   id: string
@@ -157,10 +226,18 @@ export interface Page<T> {
   offset: number
   limit: number
 }
+export interface CatalogFieldError {
+  path: string
+  message: string
+  line?: number | null
+}
 export interface CatalogImportResult {
   dry_run: boolean
   valid: boolean
   created: number
   updated: number
-  errors: Array<{ path: string; message: string; line?: number }>
+  errors: CatalogFieldError[]
+  warnings?: CatalogFieldError[]
+  /** Per kind (resources/connectors/services/actions): {created, updated}. */
+  counts?: Record<string, Record<string, number>>
 }

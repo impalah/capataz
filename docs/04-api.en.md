@@ -59,7 +59,7 @@ Returns `{subject, email, groups}` for the authenticated `Principal`; the fronte
 | DELETE | `/services/{service_id}/actions/{action_key}` | admin |
 | POST | `/services/{service_id}/actions/{action_key}/execute` | operator/admin depending on risk |
 
-Execution creates an `Execution`, records an audit entry, and enqueues only its UUID. The modeled types are `portainer`, `ansible`, `http`, `ssh`, and `rsync`; V1 executes `portainer` and `ansible` per their declared configurations, never free-form commands.
+Execution creates an `Execution`, records an audit entry, and enqueues only its UUID. Every action references a connector with the `actions` capability (`connector` in the body); its `action_type`, returned read-only, is that connector's type. The runner executes the actions of `portainer`, `ansible` and `ssh` connectors per their declared, allow-listed configuration — never free-form commands (an `ssh` action runs only a `command_id` from `runner/ssh_commands.yml`).
 
 Example critical request:
 
@@ -72,6 +72,30 @@ Content-Type: application/json
 
 {"source":"ui","reason":"Backup before upgrade","params":{}}
 ```
+
+### Connectors
+
+| Method | Route | Role |
+|---|---|---|
+| GET | `/connectors` | admin |
+| POST | `/connectors` | admin |
+| GET | `/connectors/{connector_id}` | admin |
+| PUT | `/connectors/{connector_id}?expected_version=` | admin |
+| DELETE | `/connectors/{connector_id}` | admin; `409` while any service or action uses it (the detail lists them) |
+
+The body is a connector spec, `{id, type, description, config}`, whose `config` is validated by `type` (see [YAML Catalog](05-yaml-catalog.en.md#connectors)): referenced resources must exist and have the expected type, and URLs/hosts must pass the SSRF allow-list. `id` and `type` are immutable (`409`). Responses add `capabilities` and `version`; `expected_version` is the same optimistic-concurrency check as a service `PATCH`.
+
+### Resources
+
+| Method | Route | Role | Body |
+|---|---|---|---|
+| GET | `/resources` | admin | |
+| POST | `/resources` | admin | `{id, type, description, content_base64}` |
+| GET | `/resources/{resource_id}` | admin | |
+| PUT | `/resources/{resource_id}/content` | admin | `{content_base64, description}` |
+| DELETE | `/resources/{resource_id}` | admin; `409` while a connector uses it | |
+
+Content travels as base64 in JSON (at most 64 KiB decoded) and is encrypted before being stored. **No endpoint returns it**: responses are `{id, type, description, fingerprint, size, source, version, created_at, updated_at}`, with a 12-character fingerprint to tell versions apart; audit records never include it.
 
 ### Executions and audit
 
@@ -89,8 +113,8 @@ Execution statuses: `queued`, `running`, `succeeded`, `failed`, `cancelled`, `ti
 
 | Method | Route | Role | Purpose |
 |---|---|---|---|
-| POST | `/catalog/import` | admin | Accepts `{"yaml":"...","dry_run":true|false}`; validates the YAML and upserts by `Service.id`. |
-| GET | `/catalog/export` | admin | Returns clean YAML, with no secrets or transient results. |
+| POST | `/catalog/import` | admin | Accepts `{"yaml":"...","dry_run":true|false}` with a `version: 2` catalog; validates everything (resources, connectors, services, actions and their references) before writing anything, then upserts all or nothing. Returns `{dry_run, valid, created, updated, errors, warnings, counts}` — errors and warnings with their YAML line, `counts` per kind. |
+| GET | `/catalog/export` | admin | Returns clean v2 YAML, with no resource content, secrets or transient results. |
 
 See [yaml-catalog.md](05-yaml-catalog.en.md) for the schema, errors, and examples.
 
@@ -100,4 +124,4 @@ See [yaml-catalog.md](05-yaml-catalog.en.md) for the schema, errors, and example
 - Dates: ISO 8601 UTC.
 - Internal identifiers: UUID except `Service.id` (a slug).
 - Mutations: actor, source, and correlation ID are always auditable.
-- Configuration fields: Pydantic validation discriminated by `action_type`; any secret field is invalid.
+- Configuration fields: Pydantic validation discriminated by connector type; credentials are only ever resource references, never values.

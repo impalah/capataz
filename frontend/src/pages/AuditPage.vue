@@ -12,7 +12,12 @@ const loading = ref(false)
 const error = ref('')
 const pagination = ref({ page: 1, rowsPerPage: 20, rowsNumber: 0 })
 const columns = computed(() => [
-  { name: 'timestamp', label: t('pages.audit.columns.timestamp'), field: 'timestamp', align: 'left' as const },
+  {
+    name: 'timestamp',
+    label: t('pages.audit.columns.timestamp'),
+    field: 'timestamp',
+    align: 'left' as const,
+  },
   {
     name: 'actor',
     label: t('pages.audit.columns.actor'),

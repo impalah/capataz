@@ -47,3 +47,29 @@ class ExecutionSource(StrEnum):
 class AggregationMode(StrEnum):
     ALL_REQUIRED = "all_required"
     ANY_HEALTHY = "any_healthy"
+
+
+class ResourceType(StrEnum):
+    SECRET = "secret"
+    SSH_PRIVATE_KEY = "ssh_private_key"
+    KNOWN_HOSTS = "known_hosts"
+    FILE = "file"
+
+
+class ConnectorType(StrEnum):
+    PORTAINER = "portainer"
+    PROMETHEUS = "prometheus"
+    GRAFANA = "grafana"
+    LOKI = "loki"
+    HTTP = "http"
+    ANSIBLE = "ansible"
+    SSH = "ssh"
+
+
+class ConnectorCapability(StrEnum):
+    STATUS = "status"
+    ACTIONS = "actions"
+    METRICS = "metrics"
+    HEALTH = "health"
+    DASHBOARDS = "dashboards"
+    LOGS = "logs"

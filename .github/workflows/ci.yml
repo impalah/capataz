@@ -49,8 +49,9 @@ jobs:
           mkdir -p /tmp/capataz-secrets
           printf 'postgresql+asyncpg://capataz:capataz-ci-password@localhost:5432/capataz' > /tmp/capataz-secrets/database_url
           printf 'redis://:redis-ci-password@localhost:6379/0' > /tmp/capataz-secrets/redis_url
-          printf 'test-token' > /tmp/capataz-secrets/portainer_token
           printf 'test-secret' > /tmp/capataz-secrets/cognito_client_secret
+          # Test-only Fernet key (the same shared vector as api/runner tests), never a real one.
+          printf '8tqAJmPr27f8r7U4yZZMgMC8TR44rrc-Zdrdru4ONDo=' > /tmp/capataz-secrets/resources_master_key
           export CAPATAZ_SECRETS_DIR=/tmp/capataz-secrets
           echo "CAPATAZ_SECRETS_DIR=$CAPATAZ_SECRETS_DIR" >> "$GITHUB_ENV"
       - run: uv sync --frozen
@@ -121,12 +122,16 @@ jobs:
   #         printf 'capataz-ci-redis-password' > secrets/redis_password
   #         printf 'postgresql+asyncpg://capataz:capataz-ci-postgres-password@postgres:5432/capataz' > secrets/database_url
   #         printf 'redis://:capataz-ci-redis-password@redis:6379/0' > secrets/redis_url
-  #         printf 'ci-placeholder-portainer-token' > secrets/portainer_token
   #         printf 'ci-placeholder-cognito-secret' > secrets/cognito_client_secret
-  #         printf 'ci-placeholder-ssh-key' > secrets/runner_ssh_private_key
-  #         printf 'ci.example ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIci' > secrets/runner_known_hosts
-  #         printf 'ci-vault-password' > secrets/ansible_vault_password
-  #         chmod 600 secrets/*
+  #         python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())' > secrets/resources_master_key
+  #         chmod 644 secrets/*
+  #         # The example catalog's {file: ...} resources (see docs/03-development.en.md, e2e section).
+  #         mkdir -p resources
+  #         printf 'ci-placeholder-token\n' > resources/portainer_token
+  #         printf 'ci-placeholder-key\n' > resources/runner_ssh_private_key
+  #         printf 'placeholder.example ssh-ed25519 AAAA\n' > resources/runner_known_hosts
+  #         printf 'ci-placeholder-vault\n' > resources/ansible_vault_password
+  #         chmod 644 resources/*
   #     - name: Instalar dependencias y navegador
   #       working-directory: frontend
   #       run: |
@@ -179,7 +184,7 @@ jobs:
       - name: Crear ficheros de secretos de validación
         run: |
           mkdir -p secrets
-          for secret in postgres_password redis_password database_url redis_url portainer_token cognito_client_secret runner_ssh_private_key runner_known_hosts ansible_vault_password; do
+          for secret in postgres_password redis_password database_url redis_url cognito_client_secret resources_master_key; do
             printf 'validation-only' > "secrets/$secret"
           done
       - run: docker compose config --quiet

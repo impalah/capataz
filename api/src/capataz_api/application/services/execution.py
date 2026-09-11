@@ -6,7 +6,7 @@ from uuid import UUID
 from capataz_api.application.policies import authorize_action, build_audit_event, resolve_action
 from capataz_api.application.ports import ExecutionQueue, ServiceRepository
 from capataz_api.domain.entities import Execution, Principal, Service
-from capataz_api.domain.exceptions import ConflictError, NotFoundError
+from capataz_api.domain.exceptions import ConflictError, NotFoundError, ValidationError
 from capataz_api.domain.value_objects import ExecutionSource
 
 
@@ -32,7 +32,10 @@ class ExecutionService:
         if action is None:
             raise NotFoundError("Action not found")
         authorize_action(principal, action.risk_level, confirmation, reason)
-        resolve_action(service, action, params)
+        connector = await self._repo.get_connector(action.connector_id)
+        if connector is None:
+            raise ValidationError("The action's connector no longer exists")
+        resolve_action(service, action, params, connector)
         execution = Execution(
             service_id=service_id,
             service_id_snapshot=service_id,

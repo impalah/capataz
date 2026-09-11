@@ -31,8 +31,7 @@ const selectLocale = (value: Locale): void => {
           @click="selectLocale(code)"
           ><q-item-section avatar
             ><q-icon
-              :name="locale === code ? 'radio_button_checked' : 'radio_button_unchecked'"
-          /></q-item-section
+              :name="locale === code ? 'radio_button_checked' : 'radio_button_unchecked'" /></q-item-section
           ><q-item-section>{{ LOCALE_LABELS[code] }}</q-item-section></q-item
         ></q-list
       ></q-menu

@@ -2,7 +2,17 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import JSON
@@ -17,22 +27,13 @@ class Base(DeclarativeBase):
 class ServiceModel(Base):
     __tablename__ = "services"
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    # domain.specs.ServiceSpec as JSON. name/group_name/environment are denormalized copies the
+    # repository writes from the spec, kept only so list_services can order/filter in plain SQL
+    # (portable to the SQLite unit tests, unlike JSON-path expressions or generated columns).
+    spec: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
     name: Mapped[str] = mapped_column(String(255))
-    description: Mapped[str | None] = mapped_column(Text)
     group_name: Mapped[str] = mapped_column(String(128))
-    icon: Mapped[str | None] = mapped_column(String(128))
     environment: Mapped[str] = mapped_column(String(128))
-    service_url: Mapped[str | None] = mapped_column(Text)
-    documentation_url: Mapped[str | None] = mapped_column(Text)
-    portainer_environment_id: Mapped[str | None] = mapped_column(String(128))
-    portainer_stack_name: Mapped[str | None] = mapped_column(String(255))
-    container_selectors: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
-    health_config: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
-    grafana_config: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
-    loki_config: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
-    metrics_config: Mapped[list[dict[str, Any]]] = mapped_column(JSONType, default=list)
-    metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", JSONType, default=dict)
-    maintenance: Mapped[bool] = mapped_column(Boolean, default=False)
     # Queryable mirror of the last computed ServiceStatus, written by
     # ServiceApplicationService.refresh_status after StatusService.refresh() (the only place
     # status is ever computed — there is no other cache) — this column exists solely so
@@ -53,6 +54,37 @@ class ServiceModel(Base):
     # guard against (see CR-034 in docs/code-review-2026-08.md).
 
 
+class ResourceModel(Base):
+    __tablename__ = "resources"
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    type: Mapped[str] = mapped_column(String(32))
+    description: Mapped[str | None] = mapped_column(Text)
+    # Fernet token (docs/adr/008-connectors-and-resources); the plaintext is never persisted.
+    ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    size: Mapped[int] = mapped_column(Integer)
+    source: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ConnectorModel(Base):
+    __tablename__ = "connectors"
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    type: Mapped[str] = mapped_column(String(32))
+    description: Mapped[str | None] = mapped_column(Text)
+    # Validated against domain.specs.ConnectorSpec on every read/write; holds resource ids only.
+    config: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class ActionDefinitionModel(Base):
     __tablename__ = "action_definitions"
     __table_args__ = (UniqueConstraint("service_id", "key", name="uq_action_service_key"),)
@@ -64,6 +96,10 @@ class ActionDefinitionModel(Base):
     label: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(Text)
     icon: Mapped[str | None] = mapped_column(String(128))
+    # RESTRICT: a connector can't be deleted while any action still runs through it.
+    connector_id: Mapped[str] = mapped_column(
+        ForeignKey("connectors.id", ondelete="RESTRICT"), index=True
+    )
     action_type: Mapped[str] = mapped_column(String(32))
     risk_level: Mapped[str] = mapped_column(String(32))
     requires_confirmation: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -7,14 +7,29 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from capataz_api.application.policies import sanitize
-from capataz_api.domain.entities import ActionDefinition, Execution, Service
+from capataz_api.domain.entities import (
+    ActionDefinition,
+    Connector,
+    Execution,
+    Resource,
+    Service,
+)
 from capataz_api.domain.exceptions import ConflictError
-from capataz_api.domain.value_objects import ActionType, ExecutionSource, ExecutionStatus, RiskLevel
+from capataz_api.domain.specs import CONNECTOR_SPEC_ADAPTER, ServiceSpec
+from capataz_api.domain.value_objects import (
+    ActionType,
+    ExecutionSource,
+    ExecutionStatus,
+    ResourceType,
+    RiskLevel,
+)
 from capataz_api.infrastructure.database.models import (
     ActionDefinitionModel,
     AuditEventModel,
+    ConnectorModel,
     ExecutionEventModel,
     ExecutionModel,
+    ResourceModel,
     ServiceModel,
 )
 
@@ -22,22 +37,7 @@ from capataz_api.infrastructure.database.models import (
 def service_from(model: ServiceModel) -> Service:
     return Service(
         id=model.id,
-        name=model.name,
-        description=model.description,
-        group_name=model.group_name,
-        icon=model.icon,
-        environment=model.environment,
-        service_url=model.service_url,
-        documentation_url=model.documentation_url,
-        portainer_environment_id=model.portainer_environment_id,
-        portainer_stack_name=model.portainer_stack_name,
-        container_selectors=model.container_selectors,
-        health_config=model.health_config,
-        grafana_config=model.grafana_config,
-        loki_config=model.loki_config,
-        metrics_config=model.metrics_config,
-        metadata=model.metadata_json,
-        maintenance=model.maintenance,
+        spec=ServiceSpec.model_validate(model.spec),
         version=model.version,
         created_at=model.created_at,
         updated_at=model.updated_at,
@@ -54,6 +54,7 @@ def action_from(model: ActionDefinitionModel) -> ActionDefinition:
         icon=model.icon,
         action_type=ActionType(model.action_type),
         risk_level=RiskLevel(model.risk_level),
+        connector_id=model.connector_id,
         requires_confirmation=model.requires_confirmation,
         enabled=model.enabled,
         unattended=model.unattended,
@@ -83,6 +84,35 @@ def execution_from(model: ExecutionModel) -> Execution:
         result_summary=model.result_summary,
         error_code=model.error_code,
         error_summary=model.error_summary,
+    )
+
+
+def resource_from(model: ResourceModel) -> Resource:
+    return Resource(
+        id=model.id,
+        type=ResourceType(model.type),
+        ciphertext=model.ciphertext,
+        fingerprint=model.fingerprint,
+        size=model.size,
+        description=model.description,
+        source=model.source,
+        version=model.version,
+        created_at=model.created_at,
+        updated_at=model.updated_at,
+    )
+
+
+def connector_from(model: ConnectorModel) -> Connector:
+    spec = CONNECTOR_SPEC_ADAPTER.validate_python(
+        {
+            "id": model.id,
+            "type": model.type,
+            "description": model.description,
+            "config": model.config,
+        }
+    )
+    return Connector(
+        spec=spec, version=model.version, created_at=model.created_at, updated_at=model.updated_at
     )
 
 
@@ -133,23 +163,14 @@ class SqlAlchemyRepository:
         same row can't silently overwrite one another (CR-034 in docs/code-review-2026-08.md).
         """
         model = await self.session.get(ServiceModel, service.id)
+        spec = service.spec.model_dump(mode="json")
+        # Free-form metadata is the only part of the spec that could carry an accidental secret.
+        spec["metadata"] = sanitize(spec["metadata"])
         fields = {
-            "name": service.name,
-            "description": service.description,
-            "group_name": service.group_name,
-            "icon": service.icon,
-            "environment": service.environment,
-            "service_url": service.service_url,
-            "documentation_url": service.documentation_url,
-            "portainer_environment_id": service.portainer_environment_id,
-            "portainer_stack_name": service.portainer_stack_name,
-            "container_selectors": service.container_selectors,
-            "health_config": service.health_config,
-            "grafana_config": service.grafana_config,
-            "loki_config": service.loki_config,
-            "metrics_config": service.metrics_config,
-            "metadata_json": sanitize(service.metadata),
-            "maintenance": service.maintenance,
+            "spec": spec,
+            "name": service.spec.name,
+            "group_name": service.spec.group_name,
+            "environment": service.spec.environment,
         }
         if model is None:
             model = ServiceModel(id=service.id, **fields)
@@ -230,6 +251,16 @@ class SqlAlchemyRepository:
             by_service[row.service_id].append(action_from(row))
         return by_service
 
+    async def list_actions_by_connector(self, connector_id: str) -> list[ActionDefinition]:
+        rows = (
+            await self.session.scalars(
+                select(ActionDefinitionModel)
+                .where(ActionDefinitionModel.connector_id == connector_id)
+                .order_by(ActionDefinitionModel.service_id, ActionDefinitionModel.key)
+            )
+        ).all()
+        return [action_from(row) for row in rows]
+
     async def get_action(self, service_id: str, key: str) -> ActionDefinition | None:
         model = await self.session.scalar(
             select(ActionDefinitionModel).where(
@@ -249,6 +280,7 @@ class SqlAlchemyRepository:
             "label": action.label,
             "description": action.description,
             "icon": action.icon,
+            "connector_id": action.connector_id,
             "action_type": action.action_type.value,
             "risk_level": action.risk_level.value,
             "requires_confirmation": action.requires_confirmation,
@@ -383,6 +415,88 @@ class SqlAlchemyRepository:
             )
         )
         await self._flush_translating_conflicts()
+
+    async def get_resource(self, resource_id: str) -> Resource | None:
+        model = await self.session.get(ResourceModel, resource_id)
+        return resource_from(model) if model else None
+
+    async def list_resources(self) -> list[Resource]:
+        rows = (await self.session.scalars(select(ResourceModel).order_by(ResourceModel.id))).all()
+        return [resource_from(row) for row in rows]
+
+    async def upsert_resource(self, resource: Resource) -> Resource:
+        """Persists as given; deciding whether the content actually changed (by fingerprint), and
+        so whether to call this at all, is the application layer's job."""
+        model = await self.session.get(ResourceModel, resource.id)
+        fields = {
+            "type": resource.type.value,
+            "description": resource.description,
+            "ciphertext": resource.ciphertext,
+            "fingerprint": resource.fingerprint,
+            "size": resource.size,
+            "source": resource.source,
+        }
+        if model is None:
+            model = ResourceModel(id=resource.id, **fields)
+            self.session.add(model)
+        else:
+            for key, value in fields.items():
+                setattr(model, key, value)
+            model.version += 1
+        await self._flush_translating_conflicts()
+        await self.session.refresh(model)
+        return resource_from(model)
+
+    async def delete_resource(self, resource_id: str) -> bool:
+        model = await self.session.get(ResourceModel, resource_id)
+        if not model:
+            return False
+        await self.session.delete(model)
+        await self._flush_translating_conflicts()
+        return True
+
+    async def get_connector(self, connector_id: str) -> Connector | None:
+        model = await self.session.get(ConnectorModel, connector_id)
+        return connector_from(model) if model else None
+
+    async def list_connectors(self) -> list[Connector]:
+        rows = (
+            await self.session.scalars(select(ConnectorModel).order_by(ConnectorModel.id))
+        ).all()
+        return [connector_from(row) for row in rows]
+
+    async def upsert_connector(
+        self, connector: Connector, *, enforce_version: bool = False
+    ) -> Connector:
+        model = await self.session.get(ConnectorModel, connector.id)
+        # Deliberately not passed through sanitize(): its key-based redaction would turn resource
+        # references such as `token: portainer_token` into "[REDACTED]". The config can't carry a
+        # secret anyway — ConnectorSpec only accepts slug-shaped resource ids in those fields.
+        fields = {
+            "type": connector.type.value,
+            "description": connector.spec.description,
+            "config": connector.spec.config.model_dump(mode="json"),
+        }
+        if model is None:
+            model = ConnectorModel(id=connector.id, **fields)
+            self.session.add(model)
+        else:
+            if enforce_version and model.version != connector.version:
+                raise ConflictError("The record was modified by another request; reload and retry")
+            for key, value in fields.items():
+                setattr(model, key, value)
+            model.version += 1
+        await self._flush_translating_conflicts()
+        await self.session.refresh(model)
+        return connector_from(model)
+
+    async def delete_connector(self, connector_id: str) -> bool:
+        model = await self.session.get(ConnectorModel, connector_id)
+        if not model:
+            return False
+        await self.session.delete(model)
+        await self._flush_translating_conflicts()
+        return True
 
     async def list_audit(self, **filters: object) -> tuple[list[dict[str, Any]], int]:
         total = await self.session.scalar(select(func.count()).select_from(AuditEventModel)) or 0

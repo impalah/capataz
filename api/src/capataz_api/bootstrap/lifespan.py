@@ -12,16 +12,16 @@ from capataz_api.adapters.inbound.auth import (
     DevMockIdentityProvider,
     OidcIdentityProvider,
 )
-from capataz_api.adapters.outbound.health import HttpHealthProber
-from capataz_api.adapters.outbound.portainer import PortainerClient
-from capataz_api.adapters.outbound.prometheus import PrometheusMetricsProvider
-from capataz_api.application.services.catalog import import_startup_catalog
+from capataz_api.adapters.outbound.connector_factory import DefaultConnectorClientFactory
+from capataz_api.application.services.catalog import CatalogContext, import_startup_catalog
 from capataz_api.application.services.status import StatusService
 from capataz_api.core.logging import configure_logging
 from capataz_api.core.settings import Settings, get_settings
 from capataz_api.infrastructure.celery import CeleryExecutionPublisher
+from capataz_api.infrastructure.crypto import FernetResourceCipher
 from capataz_api.infrastructure.database import build_engine, build_session_factory
 from capataz_api.infrastructure.database.repositories import SqlAlchemyRepository
+from capataz_api.infrastructure.resources import FileSystemResourceSourceLoader
 from capataz_api.infrastructure.secrets import read_secret
 
 
@@ -48,29 +48,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.identity_provider = CognitoIdentityProvider(
             settings.cognito_region, settings.cognito_user_pool_id, settings.cognito_app_client_id
         )
-    platform = None
-    if settings.portainer_url:
-        token = read_secret("portainer_token", required=False)
-        if token:
-            platform = PortainerClient(
-                str(settings.portainer_url), token, settings.http_timeout_seconds
-            )
-    metrics_provider = None
-    if settings.metrics_provider == "prometheus" and settings.prometheus_url:
-        metrics_token = read_secret("prometheus_token", required=False)
-        metrics_provider = PrometheusMetricsProvider(
-            str(settings.prometheus_url), metrics_token, settings.http_timeout_seconds
-        )
+    master_key = read_secret("resources_master_key")
+    assert master_key is not None  # required=True (the default) never returns None
+    cipher = FernetResourceCipher.from_secret(master_key)
+    app.state.resource_cipher = cipher
     app.state.status_service = StatusService(
-        platform,
-        HttpHealthProber(settings.health_suffixes, settings.http_timeout_seconds),
-        metrics_provider,
+        DefaultConnectorClientFactory(settings.health_suffixes, settings.http_timeout_seconds)
+    )
+    app.state.catalog_context = CatalogContext(
+        cipher=cipher,
+        loader=FileSystemResourceSourceLoader(settings.resources_dir),
+        inline_permitted=settings.inline_resources_permitted,
+        allowed_suffixes=settings.health_suffixes,
     )
     if settings.initial_catalog_yaml_path:
         async with app.state.session_factory() as session:
             try:
                 await import_startup_catalog(
-                    SqlAlchemyRepository(session), settings.initial_catalog_yaml_path
+                    SqlAlchemyRepository(session),
+                    settings.initial_catalog_yaml_path,
+                    app.state.catalog_context,
                 )
                 await session.commit()
             except Exception:

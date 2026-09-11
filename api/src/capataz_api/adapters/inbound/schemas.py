@@ -1,15 +1,41 @@
+import base64
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    field_validator,
+    model_validator,
+)
 
+from capataz_api.domain.entities import Connector, Resource, Service
+from capataz_api.domain.specs import (
+    MAX_RESOURCE_BYTES,
+    SERVICE_ID_PATTERN,
+    ActionSpec,
+    ConnectorSpec,
+    ObservabilitySpec,
+    RuntimeSpec,
+    ServiceSpec,
+    connector_capabilities,
+)
 from capataz_api.domain.value_objects import (
     ActionType,
+    ConnectorCapability,
+    ConnectorType,
     ExecutionSource,
     ExecutionStatus,
+    ResourceType,
     RiskLevel,
 )
+
+# base64 of MAX_RESOURCE_BYTES, rounded up to a whole 4-char group.
+_MAX_RESOURCE_BASE64 = 4 * ((MAX_RESOURCE_BYTES + 2) // 3)
 
 # RFC 7231/7807 status-to-section mapping used to default ProblemDetail.type.
 _STATUS_TO_SECTION: dict[int, str] = {
@@ -34,48 +60,37 @@ def rfc_section_url(status: int) -> str:
     return section if section.startswith("https://") else f"{base_url}{section}"
 
 
-class ServiceInput(BaseModel):
+class ServiceInput(ServiceSpec):
+    """A new service: its immutable slug id plus the full domain.specs.ServiceSpec."""
+
+    id: str = Field(pattern=SERVICE_ID_PATTERN, max_length=128)
+
+
+class ServicePatch(BaseModel):
+    """Top-level partial update: each supplied field replaces that whole spec field."""
+
     model_config = ConfigDict(extra="forbid")
-    id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")
-    name: str
-    group_name: str
-    environment: str
+    id: str | None = None
+    name: str | None = None
     description: str | None = None
+    group_name: str | None = None
+    environment: str | None = None
     icon: str | None = None
+    tags: list[str] | None = None
     service_url: str | None = None
     documentation_url: str | None = None
-    portainer_environment_id: str | None = None
-    portainer_stack_name: str | None = None
-    container_selectors: dict[str, Any] = Field(default_factory=dict)
-    health_config: dict[str, Any] = Field(default_factory=dict)
-    grafana_config: dict[str, Any] = Field(default_factory=dict)
-    loki_config: dict[str, Any] = Field(default_factory=dict)
-    metrics_config: list[dict[str, Any]] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    maintenance: bool = False
-
-
-class ServicePatch(ServiceInput):
-    id: str | None = None
+    runtime: RuntimeSpec | None = None
+    observability: ObservabilitySpec | None = None
+    metadata: dict[str, Any] | None = None
+    maintenance: bool | None = None
     # Optional: when supplied, the update is rejected with 409 if the row has changed since the
     # client last read this version (see CR-034 in docs/code-review-2026-08.md). Omitting it keeps
     # the previous, more permissive last-write-wins behavior for callers that don't send it yet.
     expected_version: int | None = None
 
 
-class ActionInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    key: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")
-    label: str
-    action_type: ActionType
-    risk_level: RiskLevel
-    description: str | None = None
-    icon: str | None = None
-    requires_confirmation: bool = False
-    enabled: bool = True
-    unattended: bool = False
-    config: dict[str, Any]
-    allowed_parameters_schema: dict[str, Any] = Field(default_factory=dict)
+class ActionInput(ActionSpec):
+    """An action definition; its type is always the type of the connector it references."""
 
 
 class ExecuteInput(BaseModel):
@@ -100,9 +115,12 @@ class CatalogFieldErrorResponse(BaseModel):
 class CatalogImportResponse(BaseModel):
     dry_run: bool
     valid: bool
+    # Services only; `counts` breaks resources/connectors/services down individually.
     created: int = 0
     updated: int = 0
     errors: list[CatalogFieldErrorResponse] = Field(default_factory=list)
+    warnings: list[CatalogFieldErrorResponse] = Field(default_factory=list)
+    counts: dict[str, dict[str, int]] = Field(default_factory=dict)
 
 
 class Page[T](BaseModel):
@@ -112,30 +130,23 @@ class Page[T](BaseModel):
     limit: int
 
 
-class ServiceResponse(BaseModel):
-    """Response DTO for Service; from_attributes lets it serialize the dataclass directly."""
+class ServiceResponse(ServiceSpec):
+    """A service as the flat spec fields plus its identity/versioning metadata."""
 
-    model_config = ConfigDict(from_attributes=True)
     id: str
-    name: str
-    group_name: str
-    environment: str
-    description: str | None = None
-    icon: str | None = None
-    service_url: str | None = None
-    documentation_url: str | None = None
-    portainer_environment_id: str | None = None
-    portainer_stack_name: str | None = None
-    container_selectors: dict[str, Any]
-    health_config: dict[str, Any]
-    grafana_config: dict[str, Any]
-    loki_config: dict[str, Any]
-    metrics_config: list[dict[str, Any]]
-    metadata: dict[str, Any]
-    maintenance: bool
     version: int
     created_at: datetime
     updated_at: datetime
+
+    @classmethod
+    def from_entity(cls, service: Service) -> ServiceResponse:
+        return cls(
+            id=service.id,
+            version=service.version,
+            created_at=service.created_at,
+            updated_at=service.updated_at,
+            **service.spec.model_dump(),
+        )
 
 
 class ActionResponse(BaseModel):
@@ -146,6 +157,7 @@ class ActionResponse(BaseModel):
     label: str
     action_type: ActionType
     risk_level: RiskLevel
+    connector: str = Field(validation_alias=AliasChoices("connector", "connector_id"))
     description: str | None = None
     icon: str | None = None
     requires_confirmation: bool
@@ -153,6 +165,90 @@ class ActionResponse(BaseModel):
     unattended: bool
     config: dict[str, Any]
     allowed_parameters_schema: dict[str, Any]
+
+
+class ConnectorInput(RootModel[ConnectorSpec]):
+    """Any connector type; the `type` field selects which config shape is expected."""
+
+
+class ConnectorResponse(BaseModel):
+    id: str
+    type: ConnectorType
+    description: str | None = None
+    config: dict[str, Any]
+    capabilities: list[ConnectorCapability]
+    version: int
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_entity(cls, connector: Connector) -> ConnectorResponse:
+        return cls(
+            id=connector.id,
+            type=connector.type,
+            description=connector.spec.description,
+            config=connector.spec.config.model_dump(mode="json"),
+            capabilities=sorted(connector_capabilities(connector.spec)),
+            version=connector.version,
+            created_at=connector.created_at,
+            updated_at=connector.updated_at,
+        )
+
+
+class _ResourceContent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    content_base64: str = Field(min_length=1, max_length=_MAX_RESOURCE_BASE64)
+
+    @field_validator("content_base64")
+    @classmethod
+    def must_be_base64(cls, value: str) -> str:
+        compact = "".join(value.split())
+        try:
+            base64.b64decode(compact, validate=True)
+        except ValueError:
+            raise ValueError("content_base64 is not valid base64") from None
+        return compact
+
+    def content(self) -> bytes:
+        return base64.b64decode(self.content_base64)
+
+
+class ResourceCreate(_ResourceContent):
+    id: str
+    type: ResourceType
+    description: str | None = None
+
+
+class ResourceContentUpdate(_ResourceContent):
+    description: str | None = None
+
+
+class ResourceResponse(BaseModel):
+    """Metadata only: a resource's content is never returned by any endpoint."""
+
+    id: str
+    type: ResourceType
+    description: str | None = None
+    fingerprint: str = Field(description="Short keyed fingerprint, to tell versions apart")
+    size: int
+    source: dict[str, Any]
+    version: int
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_entity(cls, resource: Resource) -> ResourceResponse:
+        return cls(
+            id=resource.id,
+            type=resource.type,
+            description=resource.description,
+            fingerprint=resource.fingerprint[:12],
+            size=resource.size,
+            source=resource.source,
+            version=resource.version,
+            created_at=resource.created_at,
+            updated_at=resource.updated_at,
+        )
 
 
 class ExecutionResponse(BaseModel):

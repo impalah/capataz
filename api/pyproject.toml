@@ -1,6 +1,6 @@
 [project]
 name = "capataz-api"
-version = "0.1.9"
+version = "0.1.10"
 description = "Capataz homelab control-plane API"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -9,6 +9,7 @@ dependencies = [
   "asyncpg>=0.30",
   "auth-middleware>=0.6.1",
   "celery[redis]>=5.4",
+  "cryptography>=45",
   "fastapi>=0.115",
   "httpx>=0.28",
   "loguru>=0.7",

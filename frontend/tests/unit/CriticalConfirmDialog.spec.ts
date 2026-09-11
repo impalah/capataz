@@ -7,6 +7,7 @@ const action: ActionDefinition = {
   key: 'backup',
   label: 'Copia de seguridad',
   action_type: 'ansible',
+  connector: 'ansible',
   risk_level: 'critical',
   requires_confirmation: true,
   enabled: true,

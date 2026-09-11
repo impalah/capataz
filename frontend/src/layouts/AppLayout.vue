@@ -80,15 +80,12 @@ watch(
             <path
               d="M10 19 L19 14 L23 19 C26 17 29 16 32 16 C35 16 38 17 41 19 L45 14 L54 19 L52 42 C51 51 43 56 32 56 C21 56 13 51 12 42 Z"
               fill="var(--color-brand)"
-            /><circle cx="23" cy="35" r="10" fill="white" /><circle cx="41" cy="35" r="10" fill="white" /><circle
-              cx="23"
-              cy="35"
-              r="4"
-              fill="var(--color-brand)"
-            /><circle cx="41" cy="35" r="4" fill="var(--color-brand)" /><path
-              d="M32 39 L36 44 L32 48 L28 44 Z"
-              fill="white"
-            /></svg
+            />
+            <circle cx="23" cy="35" r="10" fill="white" />
+            <circle cx="41" cy="35" r="10" fill="white" />
+            <circle cx="23" cy="35" r="4" fill="var(--color-brand)" />
+            <circle cx="41" cy="35" r="4" fill="var(--color-brand)" />
+            <path d="M32 39 L36 44 L32 48 L28 44 Z" fill="white" /></svg
           ><span>capataz</span></RouterLink
         ><q-space /><q-btn
           flat
@@ -122,9 +119,7 @@ watch(
                 ></template
               ><template v-else
                 ><q-item-label header>{{ auth.displayName }}</q-item-label
-                ><q-item-label caption class="q-px-md q-pb-sm">{{
-                  roleLabel(auth.highestRole)
-                }}</q-item-label
+                ><q-item-label caption class="q-px-md q-pb-sm">{{ roleLabel(auth.highestRole) }}</q-item-label
                 ><q-item v-close-popup clickable @click="auth.logout()"
                   ><q-item-section avatar><q-icon name="logout" /></q-item-section
                   ><q-item-section>{{ t('layout.logout') }}</q-item-section></q-item

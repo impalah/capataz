@@ -10,11 +10,16 @@ from typing import Any, Protocol
 class AutomationJob:
     execution_id: str
     service_id: str
+    # Always equal to the type of the action's connector (checked when the job is loaded).
     action_type: str
     action_config: dict[str, Any]
-    service_container_selectors: dict[str, Any]
-    portainer_environment_id: str | None
-    service_portainer_stack_name: str | None = None
+    connector_config: dict[str, Any] = field(default_factory=dict)
+    # The service spec's `runtime` block: environment_id, stack_name and its containers/services
+    # selectors. Only Portainer actions use it.
+    runtime: dict[str, Any] | None = None
+    # Connector config field -> decrypted resource content. Kept out of repr so a logged job can
+    # never print it.
+    secrets: dict[str, bytes] = field(default_factory=dict, repr=False)
     params: dict[str, Any] = field(default_factory=dict)
 
 

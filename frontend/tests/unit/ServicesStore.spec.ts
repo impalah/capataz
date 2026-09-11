@@ -22,6 +22,7 @@ const restartAction: ActionDefinition = {
   key: 'restart',
   label: 'Reiniciar',
   action_type: 'portainer',
+  connector: 'portainer',
   risk_level: 'operate',
   requires_confirmation: false,
   enabled: true,

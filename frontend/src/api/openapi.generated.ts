@@ -247,6 +247,96 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/connectors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Connectors */
+        get: operations["list_connectors_api_v1_connectors_get"];
+        put?: never;
+        /** Create Connector */
+        post: operations["create_connector_api_v1_connectors_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connectors/{connector_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Connector */
+        get: operations["get_connector_api_v1_connectors__connector_id__get"];
+        /** Update Connector */
+        put: operations["update_connector_api_v1_connectors__connector_id__put"];
+        post?: never;
+        /** Delete Connector */
+        delete: operations["delete_connector_api_v1_connectors__connector_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/resources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Resources */
+        get: operations["list_resources_api_v1_resources_get"];
+        put?: never;
+        /** Create Resource */
+        post: operations["create_resource_api_v1_resources_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/resources/{resource_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Resource */
+        get: operations["get_resource_api_v1_resources__resource_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Resource */
+        delete: operations["delete_resource_api_v1_resources__resource_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/resources/{resource_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Replace Resource Content */
+        put: operations["replace_resource_content_api_v1_resources__resource_id__content_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/catalog/import": {
         parameters: {
             query?: never;
@@ -302,18 +392,20 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** ActionInput */
+        /**
+         * ActionInput
+         * @description An action definition; its type is always the type of the connector it references.
+         */
         ActionInput: {
             /** Key */
             key: string;
             /** Label */
             label: string;
-            action_type: components["schemas"]["ActionType"];
-            risk_level: components["schemas"]["RiskLevel"];
             /** Description */
             description?: string | null;
             /** Icon */
             icon?: string | null;
+            risk_level: components["schemas"]["RiskLevel"];
             /**
              * Requires Confirmation
              * @default false
@@ -329,6 +421,8 @@ export interface components {
              * @default false
              */
             unattended: boolean;
+            /** Connector */
+            connector: string;
             /** Config */
             config: {
                 [key: string]: unknown;
@@ -353,6 +447,8 @@ export interface components {
             label: string;
             action_type: components["schemas"]["ActionType"];
             risk_level: components["schemas"]["RiskLevel"];
+            /** Connector */
+            connector: string;
             /** Description */
             description?: string | null;
             /** Icon */
@@ -377,6 +473,37 @@ export interface components {
          * @enum {string}
          */
         ActionType: "portainer" | "ansible" | "http" | "ssh" | "rsync";
+        /**
+         * AggregationMode
+         * @enum {string}
+         */
+        AggregationMode: "all_required" | "any_healthy";
+        /** AnsibleConfig */
+        AnsibleConfig: {
+            /** Inventory */
+            inventory: string;
+            /** User */
+            user?: string | null;
+            /** Private Key */
+            private_key: string;
+            /** Known Hosts */
+            known_hosts: string;
+            /** Vault Password */
+            vault_password?: string | null;
+        };
+        /** AnsibleConnector */
+        AnsibleConnector: {
+            /** Id */
+            id: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "ansible";
+            config: components["schemas"]["AnsibleConfig"];
+        };
         /** AuditEventResponse */
         AuditEventResponse: {
             /** Id */
@@ -439,6 +566,90 @@ export interface components {
             updated: number;
             /** Errors */
             errors?: components["schemas"]["CatalogFieldErrorResponse"][];
+            /** Warnings */
+            warnings?: components["schemas"]["CatalogFieldErrorResponse"][];
+            /** Counts */
+            counts?: {
+                [key: string]: {
+                    [key: string]: number;
+                };
+            };
+        };
+        /**
+         * ConnectorCapability
+         * @enum {string}
+         */
+        ConnectorCapability: "status" | "actions" | "metrics" | "health" | "dashboards" | "logs";
+        /**
+         * ConnectorInput
+         * @description Any connector type; the `type` field selects which config shape is expected.
+         */
+        ConnectorInput: components["schemas"]["PortainerConnector"] | components["schemas"]["PrometheusConnector"] | components["schemas"]["GrafanaConnector"] | components["schemas"]["LokiConnector"] | components["schemas"]["HttpConnector"] | components["schemas"]["AnsibleConnector"] | components["schemas"]["SshConnector"];
+        /** ConnectorResponse */
+        ConnectorResponse: {
+            /** Id */
+            id: string;
+            type: components["schemas"]["ConnectorType"];
+            /** Description */
+            description?: string | null;
+            /** Config */
+            config: {
+                [key: string]: unknown;
+            };
+            /** Capabilities */
+            capabilities: components["schemas"]["ConnectorCapability"][];
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * ConnectorType
+         * @enum {string}
+         */
+        ConnectorType: "portainer" | "prometheus" | "grafana" | "loki" | "http" | "ansible" | "ssh";
+        /** ContainerSelector */
+        ContainerSelector: {
+            /** Name */
+            name: string;
+            /**
+             * Required
+             * @default true
+             */
+            required: boolean;
+            /**
+             * Critical
+             * @default false
+             */
+            critical: boolean;
+        };
+        /** DashboardSpec */
+        DashboardSpec: {
+            /**
+             * Label
+             * @default grafana
+             */
+            label: string;
+            /** Connector */
+            connector: string;
+            /** Uid */
+            uid?: string | null;
+            /** Slug */
+            slug?: string | null;
+            /** Url */
+            url?: string | null;
+            /** Variables */
+            variables?: {
+                [key: string]: string;
+            };
         };
         /** ExecuteInput */
         ExecuteInput: {
@@ -532,10 +743,134 @@ export interface components {
          * @enum {string}
          */
         ExecutionStatus: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "timed_out" | "rejected";
+        /** GrafanaConfig */
+        GrafanaConfig: {
+            /**
+             * Url
+             * Format: uri
+             */
+            url: string;
+        };
+        /** GrafanaConnector */
+        GrafanaConnector: {
+            /** Id */
+            id: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "grafana";
+            config: components["schemas"]["GrafanaConfig"];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HealthSpec */
+        HealthSpec: {
+            /** Connector */
+            connector: string;
+            /**
+             * Url
+             * Format: uri
+             */
+            url: string;
+            /**
+             * Method
+             * @default GET
+             * @enum {string}
+             */
+            method: "GET" | "HEAD";
+            /**
+             * Expected Status
+             * @default 200
+             */
+            expected_status: number;
+            /**
+             * Timeout Seconds
+             * @default 5
+             */
+            timeout_seconds: number;
+        };
+        /** HttpConfig */
+        HttpConfig: {
+            /** Allowed Host Suffixes */
+            allowed_host_suffixes?: string[];
+            /**
+             * Verify Tls
+             * @default true
+             */
+            verify_tls: boolean;
+            /**
+             * Default Timeout Seconds
+             * @default 5
+             */
+            default_timeout_seconds: number;
+        };
+        /** HttpConnector */
+        HttpConnector: {
+            /** Id */
+            id: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "http";
+            config?: components["schemas"]["HttpConfig"];
+        };
+        /** LogsSpec */
+        LogsSpec: {
+            /** Connector */
+            connector: string;
+            /** Query */
+            query: string;
+        };
+        /** LokiConfig */
+        LokiConfig: {
+            /**
+             * Url
+             * Format: uri
+             */
+            url: string;
+        };
+        /** LokiConnector */
+        LokiConnector: {
+            /** Id */
+            id: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "loki";
+            config: components["schemas"]["LokiConfig"];
+        };
+        /**
+         * MetricSpec
+         * @description Admin-authored PromQL, run verbatim and read-only (trust boundary: docs/06-security).
+         */
+        MetricSpec: {
+            /** Label */
+            label: string;
+            /** Connector */
+            connector: string;
+            /** Query */
+            query: string;
+        };
+        /** ObservabilitySpec */
+        ObservabilitySpec: {
+            health?: components["schemas"]["HealthSpec"] | null;
+            /** Dashboards */
+            dashboards?: components["schemas"]["DashboardSpec"][];
+            logs?: components["schemas"]["LogsSpec"] | null;
+            /** Metrics */
+            metrics?: components["schemas"]["MetricSpec"][];
         };
         /** Page[AuditEventResponse] */
         Page_AuditEventResponse_: {
@@ -570,168 +905,100 @@ export interface components {
             /** Limit */
             limit: number;
         };
-        /**
-         * RiskLevel
-         * @enum {string}
-         */
-        RiskLevel: "read" | "operate" | "critical";
-        /** ServiceInput */
-        ServiceInput: {
+        /** PortainerConfig */
+        PortainerConfig: {
+            /**
+             * Url
+             * Format: uri
+             */
+            url: string;
+            /** Token */
+            token: string;
+            /**
+             * Verify Tls
+             * @default true
+             */
+            verify_tls: boolean;
+        };
+        /** PortainerConnector */
+        PortainerConnector: {
             /** Id */
             id: string;
-            /** Name */
-            name: string;
-            /** Group Name */
-            group_name: string;
-            /** Environment */
-            environment: string;
             /** Description */
             description?: string | null;
-            /** Icon */
-            icon?: string | null;
-            /** Service Url */
-            service_url?: string | null;
-            /** Documentation Url */
-            documentation_url?: string | null;
-            /** Portainer Environment Id */
-            portainer_environment_id?: string | null;
-            /** Portainer Stack Name */
-            portainer_stack_name?: string | null;
-            /** Container Selectors */
-            container_selectors?: {
-                [key: string]: unknown;
-            };
-            /** Health Config */
-            health_config?: {
-                [key: string]: unknown;
-            };
-            /** Grafana Config */
-            grafana_config?: {
-                [key: string]: unknown;
-            };
-            /** Loki Config */
-            loki_config?: {
-                [key: string]: unknown;
-            };
-            /** Metrics Config */
-            metrics_config?: {
-                [key: string]: unknown;
-            }[];
-            /** Metadata */
-            metadata?: {
-                [key: string]: unknown;
-            };
             /**
-             * Maintenance
-             * @default false
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
-            maintenance: boolean;
+            type: "portainer";
+            config: components["schemas"]["PortainerConfig"];
         };
-        /** ServicePatch */
-        ServicePatch: {
-            /** Id */
-            id?: string | null;
-            /** Name */
-            name: string;
-            /** Group Name */
-            group_name: string;
-            /** Environment */
-            environment: string;
-            /** Description */
-            description?: string | null;
-            /** Icon */
-            icon?: string | null;
-            /** Service Url */
-            service_url?: string | null;
-            /** Documentation Url */
-            documentation_url?: string | null;
-            /** Portainer Environment Id */
-            portainer_environment_id?: string | null;
-            /** Portainer Stack Name */
-            portainer_stack_name?: string | null;
-            /** Container Selectors */
-            container_selectors?: {
-                [key: string]: unknown;
-            };
-            /** Health Config */
-            health_config?: {
-                [key: string]: unknown;
-            };
-            /** Grafana Config */
-            grafana_config?: {
-                [key: string]: unknown;
-            };
-            /** Loki Config */
-            loki_config?: {
-                [key: string]: unknown;
-            };
-            /** Metrics Config */
-            metrics_config?: {
-                [key: string]: unknown;
-            }[];
-            /** Metadata */
-            metadata?: {
-                [key: string]: unknown;
-            };
+        /** PrometheusConfig */
+        PrometheusConfig: {
             /**
-             * Maintenance
-             * @default false
+             * Url
+             * Format: uri
              */
-            maintenance: boolean;
-            /** Expected Version */
-            expected_version?: number | null;
+            url: string;
+            /** Token */
+            token?: string | null;
+            /**
+             * Verify Tls
+             * @default true
+             */
+            verify_tls: boolean;
         };
-        /**
-         * ServiceResponse
-         * @description Response DTO for Service; from_attributes lets it serialize the dataclass directly.
-         */
-        ServiceResponse: {
+        /** PrometheusConnector */
+        PrometheusConnector: {
             /** Id */
             id: string;
-            /** Name */
-            name: string;
-            /** Group Name */
-            group_name: string;
-            /** Environment */
-            environment: string;
             /** Description */
             description?: string | null;
-            /** Icon */
-            icon?: string | null;
-            /** Service Url */
-            service_url?: string | null;
-            /** Documentation Url */
-            documentation_url?: string | null;
-            /** Portainer Environment Id */
-            portainer_environment_id?: string | null;
-            /** Portainer Stack Name */
-            portainer_stack_name?: string | null;
-            /** Container Selectors */
-            container_selectors: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "prometheus";
+            config: components["schemas"]["PrometheusConfig"];
+        };
+        /** ResourceContentUpdate */
+        ResourceContentUpdate: {
+            /** Content Base64 */
+            content_base64: string;
+            /** Description */
+            description?: string | null;
+        };
+        /** ResourceCreate */
+        ResourceCreate: {
+            /** Content Base64 */
+            content_base64: string;
+            /** Id */
+            id: string;
+            type: components["schemas"]["ResourceType"];
+            /** Description */
+            description?: string | null;
+        };
+        /**
+         * ResourceResponse
+         * @description Metadata only: a resource's content is never returned by any endpoint.
+         */
+        ResourceResponse: {
+            /** Id */
+            id: string;
+            type: components["schemas"]["ResourceType"];
+            /** Description */
+            description?: string | null;
+            /**
+             * Fingerprint
+             * @description Short keyed fingerprint, to tell versions apart
+             */
+            fingerprint: string;
+            /** Size */
+            size: number;
+            /** Source */
+            source: {
                 [key: string]: unknown;
             };
-            /** Health Config */
-            health_config: {
-                [key: string]: unknown;
-            };
-            /** Grafana Config */
-            grafana_config: {
-                [key: string]: unknown;
-            };
-            /** Loki Config */
-            loki_config: {
-                [key: string]: unknown;
-            };
-            /** Metrics Config */
-            metrics_config: {
-                [key: string]: unknown;
-            }[];
-            /** Metadata */
-            metadata: {
-                [key: string]: unknown;
-            };
-            /** Maintenance */
-            maintenance: boolean;
             /** Version */
             version: number;
             /**
@@ -744,6 +1011,200 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /**
+         * ResourceType
+         * @enum {string}
+         */
+        ResourceType: "secret" | "ssh_private_key" | "known_hosts" | "file";
+        /**
+         * RiskLevel
+         * @enum {string}
+         */
+        RiskLevel: "read" | "operate" | "critical";
+        /** RuntimeSpec */
+        RuntimeSpec: {
+            /** Connector */
+            connector: string;
+            /** Environment Id */
+            environment_id: string;
+            /** Stack Name */
+            stack_name?: string | null;
+            /** @default all_required */
+            aggregation: components["schemas"]["AggregationMode"];
+            /** Containers */
+            containers?: components["schemas"]["ContainerSelector"][] | null;
+            /** Services */
+            services?: components["schemas"]["SwarmServiceSelector"][] | null;
+        };
+        /**
+         * ServiceInput
+         * @description A new service: its immutable slug id plus the full domain.specs.ServiceSpec.
+         */
+        ServiceInput: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Group Name */
+            group_name: string;
+            /** Environment */
+            environment: string;
+            /** Icon */
+            icon?: string | null;
+            /** Tags */
+            tags?: string[];
+            /** Service Url */
+            service_url?: string | null;
+            /** Documentation Url */
+            documentation_url?: string | null;
+            runtime?: components["schemas"]["RuntimeSpec"] | null;
+            observability?: components["schemas"]["ObservabilitySpec"];
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Maintenance
+             * @default false
+             */
+            maintenance: boolean;
+            /** Id */
+            id: string;
+        };
+        /**
+         * ServicePatch
+         * @description Top-level partial update: each supplied field replaces that whole spec field.
+         */
+        ServicePatch: {
+            /** Id */
+            id?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Group Name */
+            group_name?: string | null;
+            /** Environment */
+            environment?: string | null;
+            /** Icon */
+            icon?: string | null;
+            /** Tags */
+            tags?: string[] | null;
+            /** Service Url */
+            service_url?: string | null;
+            /** Documentation Url */
+            documentation_url?: string | null;
+            runtime?: components["schemas"]["RuntimeSpec"] | null;
+            observability?: components["schemas"]["ObservabilitySpec"] | null;
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            } | null;
+            /** Maintenance */
+            maintenance?: boolean | null;
+            /** Expected Version */
+            expected_version?: number | null;
+        };
+        /**
+         * ServiceResponse
+         * @description A service as the flat spec fields plus its identity/versioning metadata.
+         */
+        ServiceResponse: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Group Name */
+            group_name: string;
+            /** Environment */
+            environment: string;
+            /** Icon */
+            icon?: string | null;
+            /** Tags */
+            tags?: string[];
+            /** Service Url */
+            service_url?: string | null;
+            /** Documentation Url */
+            documentation_url?: string | null;
+            runtime?: components["schemas"]["RuntimeSpec"] | null;
+            observability?: components["schemas"]["ObservabilitySpec"];
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Maintenance
+             * @default false
+             */
+            maintenance: boolean;
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** SshConfig */
+        SshConfig: {
+            /** Host */
+            host: string;
+            /**
+             * Port
+             * @default 22
+             */
+            port: number;
+            /** User */
+            user: string;
+            /** Private Key */
+            private_key: string;
+            /** Known Hosts */
+            known_hosts: string;
+        };
+        /** SshConnector */
+        SshConnector: {
+            /** Id */
+            id: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "ssh";
+            config: components["schemas"]["SshConfig"];
+        };
+        /**
+         * SwarmServiceSelector
+         * @description A Docker Swarm service, matched by ``{stack_name}_{name}`` (Docker's own naming) — Swarm
+         *     mangles container names per task/replica, so container-name matching never finds it.
+         */
+        SwarmServiceSelector: {
+            /** Name */
+            name: string;
+            /**
+             * Replicas
+             * @default 1
+             */
+            replicas: number;
+            /**
+             * Required
+             * @default true
+             */
+            required: boolean;
+            /**
+             * Critical
+             * @default false
+             */
+            critical: boolean;
         };
         /** ValidationError */
         ValidationError: {
@@ -1353,6 +1814,304 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_connectors_api_v1_connectors_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorResponse"][];
+                };
+            };
+        };
+    };
+    create_connector_api_v1_connectors_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectorInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_connector_api_v1_connectors__connector_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connector_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_connector_api_v1_connectors__connector_id__put: {
+        parameters: {
+            query?: {
+                expected_version?: number | null;
+            };
+            header?: never;
+            path: {
+                connector_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectorInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_connector_api_v1_connectors__connector_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connector_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_resources_api_v1_resources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceResponse"][];
+                };
+            };
+        };
+    };
+    create_resource_api_v1_resources_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResourceCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_resource_api_v1_resources__resource_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resource_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_resource_api_v1_resources__resource_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resource_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    replace_resource_content_api_v1_resources__resource_id__content_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resource_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResourceContentUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceResponse"];
                 };
             };
             /** @description Validation Error */

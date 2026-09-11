@@ -13,12 +13,17 @@ class PrometheusMetricsProvider:
     never templated or concatenated with anything else. See docs/06-security.md.
     """
 
-    def __init__(self, base_url: str, token: str | None, timeout: float = 5) -> None:
+    def __init__(
+        self, base_url: str, token: str | None, timeout: float = 5, verify: bool = True
+    ) -> None:
         self.base_url, self.token, self.timeout = base_url.rstrip("/"), token, timeout
+        self.verify = verify
 
     async def query(self, definitions: list[dict[str, Any]]) -> list[dict[str, Any]]:
         headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
-        async with httpx.AsyncClient(timeout=self.timeout, headers=headers) as client:
+        async with httpx.AsyncClient(
+            timeout=self.timeout, headers=headers, verify=self.verify
+        ) as client:
             values = await asyncio.gather(
                 *(self._run_query(client, str(d["query"])) for d in definitions)
             )

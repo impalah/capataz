@@ -1,1836 +1,1939 @@
-version: 1
+# Capataz service catalog, format v2 — see docs/05-yaml-catalog.en.md.
+#
+# resources:  files/secrets Capataz stores encrypted. `source: {file: X}` is read from
+#             CAPATAZ_RESOURCES_DIR/X at import time; the content never lives in this file.
+# connectors: typed connection plugins (portainer, prometheus, grafana, loki, http, ansible, ssh)
+#             that reference resources for their credentials.
+# services:   reference connectors for status (runtime), observability and actions.
+version: 2
+resources:
+- id: portainer_token
+  type: secret
+  source:
+    file: portainer_token
+- id: runner_ssh_private_key
+  type: ssh_private_key
+  source:
+    file: runner_ssh_private_key
+- id: runner_known_hosts
+  type: known_hosts
+  source:
+    file: runner_known_hosts
+- id: ansible_vault_password
+  type: secret
+  source:
+    file: ansible_vault_password
+connectors:
+- id: portainer
+  type: portainer
+  config:
+    url: https://portainer.404labo.net
+    token: portainer_token
+- id: http
+  type: http
+- id: grafana
+  type: grafana
+  config:
+    url: https://grafana.404labo.net
+- id: prometheus
+  type: prometheus
+  config:
+    url: http://prometheus.404labo.net:9090
+- id: ansible
+  type: ansible
+  config:
+    inventory: inventories/homelab.yml
+    private_key: runner_ssh_private_key
+    known_hosts: runner_known_hosts
+    vault_password: ansible_vault_password
 services:
-  - id: open-webui
-    name: Open WebUI
-    description: Interfaz de modelos locales y externos y me voy a pasar de líneas a ver qué hace.
-    group_name: IA
-    environment: homelab
-    icon: auto_awesome
-    service_url: https://openwebui.404labo.net
-    documentation_url: https://docs.openwebui.com
-    portainer:
-      environment_id: 7
-      stack_name: open-webui
-      aggregation: all_required
-      services:
-        - name: open-webui
-          replicas: 1
-          required: true
+- id: open-webui
+  name: Open WebUI
+  description: Interfaz de modelos locales y externos y me voy a pasar de líneas a ver qué hace.
+  group_name: IA
+  environment: homelab
+  icon: auto_awesome
+  service_url: https://openwebui.404labo.net
+  documentation_url: https://docs.openwebui.com
+  runtime:
+    connector: portainer
+    environment_id: '7'
+    stack_name: open-webui
+    aggregation: all_required
+    services:
+    - name: open-webui
+      replicas: 1
+      required: true
+  observability:
     health:
-      type: http
+      connector: http
       url: https://openwebui.404labo.net/health
       expected_status: 200
       timeout_seconds: 5
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: open-webui
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="open-webui"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="open-webui"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="open-webui"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="open-webui"}) / 1024 / 1024'
-    actions:
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_services
-      - key: backup
-        label: Copia de seguridad
-        icon: backup
-        action_type: ansible
-        risk_level: critical
-        requires_confirmation: true
-        config:
-          playbook: playbooks/backup_service.yml
-          inventory: inventories/homelab.yml
-          limit: node-ai-01
-          extra_vars:
-            service: open-webui
-          timeout_seconds: 600
-
-  - id: ollama-service
-    name: Ollama
-    description: Servicio ollama
-    group_name: IA
-    environment: homelab
-    icon: memory
-    service_url: https://ollama.404labo.net
-    documentation_url: https://github.com/ollama/ollama
-    portainer:
-      environment_id: 5
-      stack_name: homelab-ryzen
-      aggregation: all_required
-      containers:
-        - name: ollama
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="open-webui"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="open-webui"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="open-webui"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="open-webui"}) / 1024 / 1024
+  actions:
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_services
+  - key: backup
+    label: Copia de seguridad
+    icon: backup
+    risk_level: critical
+    requires_confirmation: true
+    connector: ansible
+    config:
+      playbook: playbooks/backup_service.yml
+      limit: node-ai-01
+      extra_vars:
+        service: open-webui
+      timeout_seconds: 600
+- id: ollama-service
+  name: Ollama
+  description: Servicio ollama
+  group_name: IA
+  environment: homelab
+  icon: memory
+  service_url: https://ollama.404labo.net
+  documentation_url: https://github.com/ollama/ollama
+  runtime:
+    connector: portainer
+    environment_id: '5'
+    stack_name: homelab-ryzen
+    aggregation: all_required
+    containers:
+    - name: ollama
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: ollama-service
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="ollama-service"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="ollama-service"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="ollama-service"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="ollama-service"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_containers
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_containers
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_containers
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_containers
-
-  - id: postgres-main
-    name: PostgreSQL
-    description: PostgreSQL compartido y multi-tenant del clúster (n8n, SonarQube y más)
-    group_name: Datos
-    environment: homelab
-    icon: storage
-    portainer:
-      environment_id: 7
-      stack_name: postgres-main
-      aggregation: all_required
-      services:
-        - name: postgres-main
-          replicas: 1
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="ollama-service"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="ollama-service"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="ollama-service"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="ollama-service"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_containers
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_containers
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_containers
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_containers
+- id: postgres-main
+  name: PostgreSQL
+  description: PostgreSQL compartido y multi-tenant del clúster (n8n, SonarQube y más)
+  group_name: Datos
+  environment: homelab
+  icon: storage
+  runtime:
+    connector: portainer
+    environment_id: '7'
+    stack_name: postgres-main
+    aggregation: all_required
+    services:
+    - name: postgres-main
+      replicas: 1
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: postgres-main
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="postgres-main"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="postgres-main"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="postgres-main"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="postgres-main"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_services
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_services
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_services
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_services
-
-  - id: valkey
-    name: Valkey
-    description: Caché clave-valor compartido del clúster (fork de Redis), sin persistencia; sin consumidores todavía
-    group_name: Datos
-    environment: homelab
-    icon: bolt
-    portainer:
-      environment_id: 7
-      stack_name: valkey
-      aggregation: all_required
-      services:
-        - name: valkey
-          replicas: 1
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="postgres-main"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="postgres-main"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="postgres-main"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="postgres-main"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_services
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_services
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_services
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_services
+- id: valkey
+  name: Valkey
+  description: Caché clave-valor compartido del clúster (fork de Redis), sin persistencia; sin consumidores todavía
+  group_name: Datos
+  environment: homelab
+  icon: bolt
+  runtime:
+    connector: portainer
+    environment_id: '7'
+    stack_name: valkey
+    aggregation: all_required
+    services:
+    - name: valkey
+      replicas: 1
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: valkey
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="valkey"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="valkey"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="valkey"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="valkey"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_services
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_services
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_services
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_services
-
-  - id: pihole
-    name: Pi-hole
-    description: Bloqueador de anuncios y servidor DNS autoritativo para 404labo.net
-    group_name: Red
-    environment: homelab
-    icon: shield
-    service_url: https://pihole.404labo.net
-    documentation_url: https://docs.pi-hole.net/
-    portainer:
-      environment_id: 2
-      stack_name: homelab-pi-dns
-      aggregation: all_required
-      containers:
-        - name: pihole
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="valkey"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="valkey"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="valkey"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="valkey"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_services
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_services
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_services
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_services
+- id: pihole
+  name: Pi-hole
+  description: Bloqueador de anuncios y servidor DNS autoritativo para 404labo.net
+  group_name: Red
+  environment: homelab
+  icon: shield
+  service_url: https://pihole.404labo.net
+  documentation_url: https://docs.pi-hole.net/
+  runtime:
+    connector: portainer
+    environment_id: '2'
+    stack_name: homelab-pi-dns
+    aggregation: all_required
+    containers:
+    - name: pihole
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: pihole
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="pihole"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="pihole"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="pihole"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="pihole"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_containers
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_containers
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_containers
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_containers
-
-  - id: n8n-main
-    name: n8n
-    description: Automatización de flujos de trabajo, instancia principal (co-localizada con postgres-main)
-    group_name: Automatización
-    environment: homelab
-    icon: account_tree
-    service_url: https://n8n.404labo.net
-    documentation_url: https://docs.n8n.io
-    portainer:
-      environment_id: 7
-      stack_name: n8n-main
-      aggregation: all_required
-      services:
-        - name: n8n-main
-          replicas: 1
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="pihole"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="pihole"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="pihole"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="pihole"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_containers
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_containers
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_containers
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_containers
+- id: n8n-main
+  name: n8n
+  description: Automatización de flujos de trabajo, instancia principal (co-localizada con postgres-main)
+  group_name: Automatización
+  environment: homelab
+  icon: account_tree
+  service_url: https://n8n.404labo.net
+  documentation_url: https://docs.n8n.io
+  runtime:
+    connector: portainer
+    environment_id: '7'
+    stack_name: n8n-main
+    aggregation: all_required
+    services:
+    - name: n8n-main
+      replicas: 1
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: n8n-main
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="n8n-main"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="n8n-main"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="n8n-main"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="n8n-main"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_services
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_services
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_services
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_services
-
-  - id: vllm
-    name: vLLM
-    description: Servidor de inferencia de alto rendimiento (API compatible OpenAI) — alterna con Ollama, nunca a la vez
-    group_name: IA
-    environment: homelab
-    icon: speed
-    service_url: https://vllm.404labo.net
-    documentation_url: https://docs.vllm.ai/
-    portainer:
-      environment_id: 5
-      stack_name: homelab-ryzen
-      aggregation: all_required
-      containers:
-        - name: vllm
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="n8n-main"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="n8n-main"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="n8n-main"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="n8n-main"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_services
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_services
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_services
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_services
+- id: vllm
+  name: vLLM
+  description: Servidor de inferencia de alto rendimiento (API compatible OpenAI) — alterna con Ollama, nunca a la vez
+  group_name: IA
+  environment: homelab
+  icon: speed
+  service_url: https://vllm.404labo.net
+  documentation_url: https://docs.vllm.ai/
+  runtime:
+    connector: portainer
+    environment_id: '5'
+    stack_name: homelab-ryzen
+    aggregation: all_required
+    containers:
+    - name: vllm
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: vllm
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="vllm"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="vllm"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="vllm"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="vllm"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_containers
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_containers
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_containers
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_containers
-
-  - id: comfyui
-    name: ComfyUI
-    description: Generación de imágenes (Stable Diffusion y derivados) — alterna con whisper-service
-    group_name: IA
-    environment: homelab
-    icon: palette
-    service_url: https://comfyui.404labo.net
-    documentation_url: https://docs.comfy.org/
-    portainer:
-      environment_id: 5
-      stack_name: homelab-ryzen
-      aggregation: all_required
-      containers:
-        - name: comfyui
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="vllm"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="vllm"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="vllm"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="vllm"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_containers
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_containers
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_containers
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_containers
+- id: comfyui
+  name: ComfyUI
+  description: Generación de imágenes (Stable Diffusion y derivados) — alterna con whisper-service
+  group_name: IA
+  environment: homelab
+  icon: palette
+  service_url: https://comfyui.404labo.net
+  documentation_url: https://docs.comfy.org/
+  runtime:
+    connector: portainer
+    environment_id: '5'
+    stack_name: homelab-ryzen
+    aggregation: all_required
+    containers:
+    - name: comfyui
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: comfyui
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="comfyui"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="comfyui"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="comfyui"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="comfyui"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_containers
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_containers
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_containers
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_containers
-
-  - id: qdrant
-    name: Qdrant
-    description: Motor de búsqueda vectorial
-    group_name: Datos
-    environment: homelab
-    icon: scatter_plot
-    service_url: https://qdrant.404labo.net
-    documentation_url: https://qdrant.tech/documentation/
-    portainer:
-      environment_id: 7
-      stack_name: qdrant
-      aggregation: all_required
-      services:
-        - name: qdrant
-          replicas: 1
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="comfyui"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="comfyui"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="comfyui"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="comfyui"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_containers
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_containers
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_containers
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_containers
+- id: qdrant
+  name: Qdrant
+  description: Motor de búsqueda vectorial
+  group_name: Datos
+  environment: homelab
+  icon: scatter_plot
+  service_url: https://qdrant.404labo.net
+  documentation_url: https://qdrant.tech/documentation/
+  runtime:
+    connector: portainer
+    environment_id: '7'
+    stack_name: qdrant
+    aggregation: all_required
+    services:
+    - name: qdrant
+      replicas: 1
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: qdrant
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="qdrant"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="qdrant"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="qdrant"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="qdrant"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_services
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_services
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_services
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_services
-
-  - id: whisper-service
-    name: Whisper
-    description: Transcripción de audio a texto (FastAPI + faster-whisper) — alterna con ComfyUI
-    group_name: IA
-    environment: homelab
-    icon: mic
-    service_url: https://whisper.404labo.net
-    portainer:
-      environment_id: 5
-      stack_name: homelab-ryzen
-      aggregation: all_required
-      containers:
-        - name: whisper-service
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="qdrant"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="qdrant"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="qdrant"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="qdrant"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_services
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_services
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_services
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_services
+- id: whisper-service
+  name: Whisper
+  description: Transcripción de audio a texto (FastAPI + faster-whisper) — alterna con ComfyUI
+  group_name: IA
+  environment: homelab
+  icon: mic
+  service_url: https://whisper.404labo.net
+  runtime:
+    connector: portainer
+    environment_id: '5'
+    stack_name: homelab-ryzen
+    aggregation: all_required
+    containers:
+    - name: whisper-service
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: whisper-service
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="whisper-service"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="whisper-service"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="whisper-service"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="whisper-service"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_containers
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_containers
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_containers
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_containers
-
-  - id: grafana
-    name: Grafana
-    description: Visualización, paneles y alertas sobre métricas, logs y trazas de todo el clúster
-    group_name: Observabilidad
-    environment: homelab
-    icon: insights
-    service_url: https://grafana.404labo.net
-    documentation_url: https://grafana.com/docs/
-    portainer:
-      environment_id: 7
-      stack_name: pi-obs
-      aggregation: all_required
-      services:
-        - name: grafana
-          replicas: 1
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="whisper-service"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="whisper-service"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="whisper-service"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="whisper-service"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_containers
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_containers
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_containers
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_containers
+- id: grafana
+  name: Grafana
+  description: Visualización, paneles y alertas sobre métricas, logs y trazas de todo el clúster
+  group_name: Observabilidad
+  environment: homelab
+  icon: insights
+  service_url: https://grafana.404labo.net
+  documentation_url: https://grafana.com/docs/
+  runtime:
+    connector: portainer
+    environment_id: '7'
+    stack_name: pi-obs
+    aggregation: all_required
+    services:
+    - name: grafana
+      replicas: 1
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: grafana
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="grafana"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="grafana"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="grafana"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="grafana"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_services
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_services
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_services
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_services
-
-  - id: prometheus
-    name: Prometheus
-    description: Base de datos de series temporales para métricas de todo el clúster
-    group_name: Observabilidad
-    environment: homelab
-    icon: timeline
-    service_url: https://prometheus.404labo.net
-    documentation_url: https://prometheus.io/docs/
-    portainer:
-      environment_id: 7
-      stack_name: pi-obs
-      aggregation: all_required
-      services:
-        - name: prometheus
-          replicas: 1
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="grafana"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="grafana"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="grafana"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="grafana"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_services
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_services
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_services
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_services
+- id: prometheus
+  name: Prometheus
+  description: Base de datos de series temporales para métricas de todo el clúster
+  group_name: Observabilidad
+  environment: homelab
+  icon: timeline
+  service_url: https://prometheus.404labo.net
+  documentation_url: https://prometheus.io/docs/
+  runtime:
+    connector: portainer
+    environment_id: '7'
+    stack_name: pi-obs
+    aggregation: all_required
+    services:
+    - name: prometheus
+      replicas: 1
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: prometheus
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="prometheus"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="prometheus"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="prometheus"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="prometheus"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_services
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_services
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_services
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_services
-
-  - id: sonarqube
-    name: SonarQube
-    description: Análisis estático de calidad de código (Community Edition)
-    group_name: Desarrollo
-    environment: homelab
-    icon: bug_report
-    service_url: https://sonarqube.404labo.net
-    documentation_url: https://docs.sonarsource.com/sonarqube/
-    portainer:
-      environment_id: 7
-      stack_name: sonarqube
-      aggregation: all_required
-      services:
-        - name: sonarqube
-          replicas: 1
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="prometheus"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="prometheus"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="prometheus"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="prometheus"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_services
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_services
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_services
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_services
+- id: sonarqube
+  name: SonarQube
+  description: Análisis estático de calidad de código (Community Edition)
+  group_name: Desarrollo
+  environment: homelab
+  icon: bug_report
+  service_url: https://sonarqube.404labo.net
+  documentation_url: https://docs.sonarsource.com/sonarqube/
+  runtime:
+    connector: portainer
+    environment_id: '7'
+    stack_name: sonarqube
+    aggregation: all_required
+    services:
+    - name: sonarqube
+      replicas: 1
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: sonarqube
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="sonarqube"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="sonarqube"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="sonarqube"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="sonarqube"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_services
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_services
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_services
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_services
-
-  - id: bifrost
-    name: Bifrost
-    description: Gateway LLM único (API OpenAI-compatible) hacia AWS Bedrock y Ollama
-    group_name: IA
-    environment: homelab
-    icon: hub
-    service_url: https://bifrost.404labo.net
-    documentation_url: https://docs.getbifrost.ai/
-    portainer:
-      environment_id: 7
-      stack_name: bifrost
-      aggregation: all_required
-      services:
-        - name: bifrost
-          replicas: 1
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="sonarqube"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="sonarqube"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="sonarqube"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="sonarqube"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_services
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_services
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_services
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_services
+- id: bifrost
+  name: Bifrost
+  description: Gateway LLM único (API OpenAI-compatible) hacia AWS Bedrock y Ollama
+  group_name: IA
+  environment: homelab
+  icon: hub
+  service_url: https://bifrost.404labo.net
+  documentation_url: https://docs.getbifrost.ai/
+  runtime:
+    connector: portainer
+    environment_id: '7'
+    stack_name: bifrost
+    aggregation: all_required
+    services:
+    - name: bifrost
+      replicas: 1
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: bifrost
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="bifrost"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="bifrost"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="bifrost"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="bifrost"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_services
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_services
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_services
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_services
-
-  - id: rsshub
-    name: RSSHub
-    description: Agregador RSS/Atom universal
-    group_name: Productividad
-    environment: homelab
-    icon: rss_feed
-    service_url: https://rsshub.404labo.net
-    portainer:
-      environment_id: 7
-      stack_name: rsshub
-      aggregation: all_required
-      services:
-        - name: rsshub
-          replicas: 1
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="bifrost"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="bifrost"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="bifrost"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="bifrost"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_services
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_services
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_services
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_services
+- id: rsshub
+  name: RSSHub
+  description: Agregador RSS/Atom universal
+  group_name: Productividad
+  environment: homelab
+  icon: rss_feed
+  service_url: https://rsshub.404labo.net
+  runtime:
+    connector: portainer
+    environment_id: '7'
+    stack_name: rsshub
+    aggregation: all_required
+    services:
+    - name: rsshub
+      replicas: 1
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: rsshub
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="rsshub"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="rsshub"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="rsshub"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="rsshub"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_services
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_services
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_services
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_services
-
-  - id: markitdown-service
-    name: Markitdown
-    description: Conversión de documentos a Markdown (API REST)
-    group_name: Productividad
-    environment: homelab
-    icon: transform
-    service_url: https://markitdown.404labo.net
-    portainer:
-      environment_id: 7
-      stack_name: markitdown
-      aggregation: all_required
-      services:
-        - name: markitdown-service
-          replicas: 1
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="rsshub"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="rsshub"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="rsshub"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="rsshub"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_services
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_services
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_services
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_services
+- id: markitdown-service
+  name: Markitdown
+  description: Conversión de documentos a Markdown (API REST)
+  group_name: Productividad
+  environment: homelab
+  icon: transform
+  service_url: https://markitdown.404labo.net
+  runtime:
+    connector: portainer
+    environment_id: '7'
+    stack_name: markitdown
+    aggregation: all_required
+    services:
+    - name: markitdown-service
+      replicas: 1
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: markitdown-service
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="markitdown-service"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="markitdown-service"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="markitdown-service"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="markitdown-service"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_services
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_services
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_services
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_services
-
-  - id: crawl4ai-scraper-service
-    name: Crawl4AI Scraper
-    description: Scraping y limpieza de contenido web a Markdown (Crawl4AI + Playwright)
-    group_name: Productividad
-    environment: homelab
-    icon: travel_explore
-    service_url: https://crawl4ai.scraper.404labo.net
-    portainer:
-      environment_id: 7
-      stack_name: crawl4ai
-      aggregation: all_required
-      services:
-        - name: crawl4ai-scraper-service
-          replicas: 1
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="markitdown-service"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="markitdown-service"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="markitdown-service"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="markitdown-service"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_services
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_services
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_services
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_services
+- id: crawl4ai-scraper-service
+  name: Crawl4AI Scraper
+  description: Scraping y limpieza de contenido web a Markdown (Crawl4AI + Playwright)
+  group_name: Productividad
+  environment: homelab
+  icon: travel_explore
+  service_url: https://crawl4ai.scraper.404labo.net
+  runtime:
+    connector: portainer
+    environment_id: '7'
+    stack_name: crawl4ai
+    aggregation: all_required
+    services:
+    - name: crawl4ai-scraper-service
+      replicas: 1
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: crawl4ai-scraper-service
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="crawl4ai-scraper-service"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="crawl4ai-scraper-service"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="crawl4ai-scraper-service"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="crawl4ai-scraper-service"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_services
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_services
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_services
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_services
-
-  - id: n8n-aux
-    name: n8n (auxiliar)
-    description: Instancia secundaria de n8n para flujos de utilidades y notificaciones
-    group_name: Automatización
-    environment: homelab
-    icon: account_tree
-    service_url: https://n8n-aux.404labo.net
-    documentation_url: https://docs.n8n.io
-    portainer:
-      environment_id: 7
-      stack_name: n8n-aux
-      aggregation: all_required
-      services:
-        - name: n8n-aux
-          replicas: 1
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="crawl4ai-scraper-service"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="crawl4ai-scraper-service"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="crawl4ai-scraper-service"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="crawl4ai-scraper-service"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_services
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_services
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_services
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_services
+- id: n8n-aux
+  name: n8n (auxiliar)
+  description: Instancia secundaria de n8n para flujos de utilidades y notificaciones
+  group_name: Automatización
+  environment: homelab
+  icon: account_tree
+  service_url: https://n8n-aux.404labo.net
+  documentation_url: https://docs.n8n.io
+  runtime:
+    connector: portainer
+    environment_id: '7'
+    stack_name: n8n-aux
+    aggregation: all_required
+    services:
+    - name: n8n-aux
+      replicas: 1
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: n8n-aux
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="n8n-aux"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="n8n-aux"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="n8n-aux"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="n8n-aux"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_services
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_services
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_services
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_services
-
-  - id: portainer
-    name: Portainer
-    description: Panel web para gestionar Docker de todo el clúster sin terminal
-    group_name: Plataforma
-    environment: homelab
-    icon: widgets
-    service_url: https://portainer.404labo.net
-    documentation_url: https://docs.portainer.io/
-    portainer:
-      environment_id: 7
-      stack_name: portainer-server
-      aggregation: all_required
-      services:
-        - name: portainer
-          replicas: 1
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="n8n-aux"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="n8n-aux"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="n8n-aux"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="n8n-aux"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_services
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_services
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_services
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_services
+- id: portainer
+  name: Portainer
+  description: Panel web para gestionar Docker de todo el clúster sin terminal
+  group_name: Plataforma
+  environment: homelab
+  icon: widgets
+  service_url: https://portainer.404labo.net
+  documentation_url: https://docs.portainer.io/
+  runtime:
+    connector: portainer
+    environment_id: '7'
+    stack_name: portainer-server
+    aggregation: all_required
+    services:
+    - name: portainer
+      replicas: 1
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: portainer
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="portainer"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="portainer"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="portainer"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="portainer"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_services
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_services
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_services
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_services
-
-  - id: vaultwarden
-    name: Vaultwarden
-    description: Gestor de contraseñas del clúster (compatible Bitwarden)
-    group_name: Seguridad
-    environment: homelab
-    icon: vpn_key
-    service_url: https://vaultwarden.404labo.net
-    documentation_url: https://github.com/dani-garcia/vaultwarden/wiki
-    portainer:
-      environment_id: 7
-      stack_name: vaultwarden
-      aggregation: all_required
-      services:
-        - name: vaultwarden
-          replicas: 1
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="portainer"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="portainer"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="portainer"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="portainer"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_services
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_services
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_services
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_services
+- id: vaultwarden
+  name: Vaultwarden
+  description: Gestor de contraseñas del clúster (compatible Bitwarden)
+  group_name: Seguridad
+  environment: homelab
+  icon: vpn_key
+  service_url: https://vaultwarden.404labo.net
+  documentation_url: https://github.com/dani-garcia/vaultwarden/wiki
+  runtime:
+    connector: portainer
+    environment_id: '7'
+    stack_name: vaultwarden
+    aggregation: all_required
+    services:
+    - name: vaultwarden
+      replicas: 1
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: vaultwarden
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="vaultwarden"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="vaultwarden"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="vaultwarden"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="vaultwarden"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_services
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_services
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_services
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_services
-
-  - id: apikey-service
-    name: API Key Service
-    description: Emisión y validación de claves de API propias; protege servicios sin autenticación nativa
-    group_name: Seguridad
-    environment: homelab
-    icon: security
-    service_url: https://apikey.404labo.net
-    portainer:
-      environment_id: 7
-      stack_name: apikey-service
-      aggregation: all_required
-      services:
-        - name: apikey-service
-          replicas: 1
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="vaultwarden"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="vaultwarden"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="vaultwarden"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="vaultwarden"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_services
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_services
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_services
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_services
+- id: apikey-service
+  name: API Key Service
+  description: Emisión y validación de claves de API propias; protege servicios sin autenticación nativa
+  group_name: Seguridad
+  environment: homelab
+  icon: security
+  service_url: https://apikey.404labo.net
+  runtime:
+    connector: portainer
+    environment_id: '7'
+    stack_name: apikey-service
+    aggregation: all_required
+    services:
+    - name: apikey-service
+      replicas: 1
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: apikey-service
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="apikey-service"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="apikey-service"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="apikey-service"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="apikey-service"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_services
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_services
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_services
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_services
-
-  - id: registry
-    name: Registry
-    description: Registro Docker privado del clúster (imágenes propias)
-    group_name: Plataforma
-    environment: homelab
-    icon: archive
-    service_url: https://registry.404labo.net
-    portainer:
-      environment_id: 7
-      stack_name: registry
-      aggregation: all_required
-      services:
-        - name: registry
-          replicas: 1
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="apikey-service"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="apikey-service"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="apikey-service"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="apikey-service"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_services
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_services
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_services
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_services
+- id: registry
+  name: Registry
+  description: Registro Docker privado del clúster (imágenes propias)
+  group_name: Plataforma
+  environment: homelab
+  icon: archive
+  service_url: https://registry.404labo.net
+  runtime:
+    connector: portainer
+    environment_id: '7'
+    stack_name: registry
+    aggregation: all_required
+    services:
+    - name: registry
+      replicas: 1
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: registry
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="registry"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="registry"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="registry"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="registry"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_services
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_services
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_services
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_services
-
-  - id: epub2pdf-service
-    name: Epub2PDF
-    description: Convierte EPUB a PDF y extrae metadatos (Calibre + ebooklib)
-    group_name: Productividad
-    environment: homelab
-    icon: picture_as_pdf
-    service_url: https://epub2pdf.404labo.net
-    portainer:
-      environment_id: 7
-      stack_name: epub2pdf-service
-      aggregation: all_required
-      services:
-        - name: epub2pdf-service
-          replicas: 1
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="registry"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="registry"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="registry"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="registry"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_services
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_services
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_services
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_services
+- id: epub2pdf-service
+  name: Epub2PDF
+  description: Convierte EPUB a PDF y extrae metadatos (Calibre + ebooklib)
+  group_name: Productividad
+  environment: homelab
+  icon: picture_as_pdf
+  service_url: https://epub2pdf.404labo.net
+  runtime:
+    connector: portainer
+    environment_id: '7'
+    stack_name: epub2pdf-service
+    aggregation: all_required
+    services:
+    - name: epub2pdf-service
+      replicas: 1
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: epub2pdf-service
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="epub2pdf-service"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="epub2pdf-service"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="epub2pdf-service"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="epub2pdf-service"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_services
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_services
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_services
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_services
-
-  - id: pdf2chunks-service
-    name: PDF2Chunks
-    description: Extrae texto de PDF (con OCR de respaldo) y lo trocea para RAG
-    group_name: Productividad
-    environment: homelab
-    icon: content_cut
-    service_url: https://pdf2chunks.404labo.net
-    portainer:
-      environment_id: 7
-      stack_name: pdf2chunks-service
-      aggregation: all_required
-      services:
-        - name: pdf2chunks-service
-          replicas: 1
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="epub2pdf-service"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="epub2pdf-service"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="epub2pdf-service"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="epub2pdf-service"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_services
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_services
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_services
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_services
+- id: pdf2chunks-service
+  name: PDF2Chunks
+  description: Extrae texto de PDF (con OCR de respaldo) y lo trocea para RAG
+  group_name: Productividad
+  environment: homelab
+  icon: content_cut
+  service_url: https://pdf2chunks.404labo.net
+  runtime:
+    connector: portainer
+    environment_id: '7'
+    stack_name: pdf2chunks-service
+    aggregation: all_required
+    services:
+    - name: pdf2chunks-service
+      replicas: 1
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: pdf2chunks-service
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="pdf2chunks-service"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="pdf2chunks-service"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="pdf2chunks-service"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="pdf2chunks-service"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_services
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_services
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_services
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_services
-
-  - id: open-terminal-mcp
-    name: Open Terminal (MCP)
-    description: Terminal, ficheros y ejecución de comandos expuestos vía MCP a Open WebUI y n8n
-    group_name: IA
-    environment: homelab
-    icon: terminal
-    service_url: https://open-terminal.404labo.net
-    documentation_url: https://github.com/open-webui/open-terminal
-    portainer:
-      environment_id: 7
-      stack_name: open-terminal-mcp
-      aggregation: all_required
-      services:
-        - name: open-terminal-mcp
-          replicas: 1
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="pdf2chunks-service"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="pdf2chunks-service"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="pdf2chunks-service"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="pdf2chunks-service"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_services
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_services
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_services
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_services
+- id: open-terminal-mcp
+  name: Open Terminal (MCP)
+  description: Terminal, ficheros y ejecución de comandos expuestos vía MCP a Open WebUI y n8n
+  group_name: IA
+  environment: homelab
+  icon: terminal
+  service_url: https://open-terminal.404labo.net
+  documentation_url: https://github.com/open-webui/open-terminal
+  runtime:
+    connector: portainer
+    environment_id: '7'
+    stack_name: open-terminal-mcp
+    aggregation: all_required
+    services:
+    - name: open-terminal-mcp
+      replicas: 1
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: open-terminal-mcp
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="open-terminal-mcp"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="open-terminal-mcp"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="open-terminal-mcp"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="open-terminal-mcp"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_services
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_services
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_services
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_services
-
-  - id: infisical
-    name: Infisical
-    description: Gestor de secretos para consumo entre máquinas (identidades por servicio)
-    group_name: Seguridad
-    environment: homelab
-    icon: enhanced_encryption
-    service_url: https://infisical.404labo.net
-    documentation_url: https://infisical.com/docs
-    portainer:
-      environment_id: 7
-      stack_name: infisical
-      aggregation: all_required
-      services:
-        - name: infisical
-          replicas: 1
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="open-terminal-mcp"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="open-terminal-mcp"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="open-terminal-mcp"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="open-terminal-mcp"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_services
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_services
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_services
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_services
+- id: infisical
+  name: Infisical
+  description: Gestor de secretos para consumo entre máquinas (identidades por servicio)
+  group_name: Seguridad
+  environment: homelab
+  icon: enhanced_encryption
+  service_url: https://infisical.404labo.net
+  documentation_url: https://infisical.com/docs
+  runtime:
+    connector: portainer
+    environment_id: '7'
+    stack_name: infisical
+    aggregation: all_required
+    services:
+    - name: infisical
+      replicas: 1
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: infisical
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="infisical"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="infisical"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="infisical"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="infisical"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_services
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_services
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_services
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_services
-
-  - id: authentik
-    name: Authentik
-    description: SSO/autenticación centralizada para personas (OIDC + forward-auth)
-    group_name: Seguridad
-    environment: homelab
-    icon: verified_user
-    service_url: https://authentik.404labo.net
-    documentation_url: https://docs.goauthentik.io/
-    portainer:
-      environment_id: 7
-      stack_name: authentik
-      aggregation: all_required
-      services:
-        - name: authentik-server
-          replicas: 1
-          required: true
-    grafana:
-      dashboard_uid: homelab-servicio-generico/servicio-generico
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="infisical"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="infisical"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="infisical"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="infisical"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_services
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_services
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_services
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_services
+- id: authentik
+  name: Authentik
+  description: SSO/autenticación centralizada para personas (OIDC + forward-auth)
+  group_name: Seguridad
+  environment: homelab
+  icon: verified_user
+  service_url: https://authentik.404labo.net
+  documentation_url: https://docs.goauthentik.io/
+  runtime:
+    connector: portainer
+    environment_id: '7'
+    stack_name: authentik
+    aggregation: all_required
+    services:
+    - name: authentik-server
+      replicas: 1
+      required: true
+  observability:
+    dashboards:
+    - label: grafana
+      connector: grafana
+      uid: homelab-servicio-generico
+      slug: servicio-generico
       variables:
         var-service: authentik-server
-        kiosk: "true"
+        kiosk: 'true'
     metrics:
-      - label: CPU
-        type: prometheus
-        query: 'avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="authentik-server"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="authentik-server"}[30s])) * 100'
-      - label: Memoria
-        type: prometheus
-        query: 'avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="authentik-server"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="authentik-server"}) / 1024 / 1024'
-    actions:
-      - key: start
-        label: Iniciar
-        icon: play_arrow
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: false
-        unattended: true
-        config:
-          operation: start
-          target: selected_services
-      - key: stop
-        label: Detener
-        icon: stop
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: stop
-          target: selected_services
-      - key: restart
-        label: Reiniciar
-        icon: restart_alt
-        action_type: portainer
-        risk_level: operate
-        requires_confirmation: true
-        unattended: true
-        config:
-          operation: restart
-          target: selected_services
-      - key: logs
-        label: Consultar logs
-        icon: article
-        action_type: portainer
-        risk_level: read
-        requires_confirmation: false
-        config:
-          operation: logs
-          target: selected_services
+    - label: CPU
+      connector: prometheus
+      query: avg(rate(container_cpu_usage_seconds_total{container_label_com_docker_stack_namespace="authentik-server"}[30s]) or rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service="authentik-server"}[30s])) * 100
+    - label: Memoria
+      connector: prometheus
+      query: avg(container_memory_working_set_bytes{container_label_com_docker_stack_namespace="authentik-server"} or container_memory_working_set_bytes{container_label_com_docker_compose_service="authentik-server"}) / 1024 / 1024
+  actions:
+  - key: start
+    label: Iniciar
+    icon: play_arrow
+    risk_level: operate
+    unattended: true
+    connector: portainer
+    config:
+      operation: start
+      target: selected_services
+  - key: stop
+    label: Detener
+    icon: stop
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: stop
+      target: selected_services
+  - key: restart
+    label: Reiniciar
+    icon: restart_alt
+    risk_level: operate
+    requires_confirmation: true
+    unattended: true
+    connector: portainer
+    config:
+      operation: restart
+      target: selected_services
+  - key: logs
+    label: Consultar logs
+    icon: article
+    risk_level: read
+    connector: portainer
+    config:
+      operation: logs
+      target: selected_services

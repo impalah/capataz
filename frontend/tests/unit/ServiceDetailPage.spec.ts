@@ -50,6 +50,7 @@ const restartAction: ActionDefinition = {
   key: 'restart',
   label: 'Reiniciar',
   action_type: 'portainer',
+  connector: 'portainer',
   risk_level: 'operate',
   requires_confirmation: false,
   enabled: true,
@@ -124,7 +125,15 @@ describe('ServiceDetailPage', () => {
   })
 
   it('shows the Portainer stack name in the header when the service declares one', async () => {
-    vi.mocked(api.service).mockResolvedValue({ ...service, portainer_stack_name: 'ai-platform' })
+    vi.mocked(api.service).mockResolvedValue({
+      ...service,
+      runtime: {
+        connector: 'portainer',
+        environment_id: '1',
+        stack_name: 'ai-platform',
+        containers: [{ name: 'app' }],
+      },
+    })
     const { wrapper } = await mountDetail()
     expect(wrapper.text()).toContain('Stack: ai-platform')
   })

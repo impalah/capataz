@@ -61,24 +61,24 @@ class PortainerClient:
             )
         return rows
 
-    async def find_link_target(self, environment_id: str, selectors: dict[str, Any]) -> str | None:
-        """Resolve the opaque Portainer/Docker ID for a deep link (see policies/links.py).
-
-        Docker's REST API only accepts this ID, never the human-readable name Capataz stores, so
-        the link builder can't compute a deep link on its own — it has to ask Portainer.
-        """
-        if "services" in selectors:
-            entries = selectors.get("services", [])
-            if not entries:
-                return None
-            stack = selectors.get("stack_name")
-            name = str(entries[0].get("name", ""))
-            full_name = f"{stack}_{name}" if stack else name
-            items = await self._request("GET", f"/api/endpoints/{environment_id}/docker/services")
-            for item in items:
-                if str(item.get("Spec", {}).get("Name", "")) == full_name:
-                    return str(item.get("ID")) or None
+    async def _find_service_target(
+        self, environment_id: str, selectors: dict[str, Any]
+    ) -> str | None:
+        entries = selectors.get("services", [])
+        if not entries:
             return None
+        stack = selectors.get("stack_name")
+        name = str(entries[0].get("name", ""))
+        full_name = f"{stack}_{name}" if stack else name
+        items = await self._request("GET", f"/api/endpoints/{environment_id}/docker/services")
+        for item in items:
+            if str(item.get("Spec", {}).get("Name", "")) == full_name:
+                return str(item.get("ID")) or None
+        return None
+
+    async def _find_container_target(
+        self, environment_id: str, selectors: dict[str, Any]
+    ) -> str | None:
         entries = selectors.get("containers", [])
         if not entries:
             return None
@@ -91,6 +91,16 @@ class PortainerClient:
             if row_name == name:
                 return str(row.get("Id")) or None
         return None
+
+    async def find_link_target(self, environment_id: str, selectors: dict[str, Any]) -> str | None:
+        """Resolve the opaque Portainer/Docker ID for a deep link (see policies/links.py).
+
+        Docker's REST API only accepts this ID, never the human-readable name Capataz stores, so
+        the link builder can't compute a deep link on its own — it has to ask Portainer.
+        """
+        if "services" in selectors:
+            return await self._find_service_target(environment_id, selectors)
+        return await self._find_container_target(environment_id, selectors)
 
     async def _service_states(
         self, environment_id: str, selectors: dict[str, Any]

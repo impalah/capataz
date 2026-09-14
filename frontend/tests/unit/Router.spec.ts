@@ -1,6 +1,7 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
 import router from '@/router'
+import type { Role } from '@/api/types'
 
 /**
  * router.beforeEach (src/router/index.ts) is the guard described in CLAUDE.md:
@@ -33,43 +34,36 @@ describe('router guards', () => {
     expect(router.currentRoute.value.query.redirect).toBe('/executions')
   })
 
-  it('lets an authenticated non-admin reach ordinary routes', async () => {
+  it.each([
+    {
+      description: 'lets an authenticated non-admin reach ordinary routes',
+      groups: ['capataz-viewer'] as Role[],
+      path: '/executions',
+      expectedName: 'executions',
+    },
+    {
+      description: 'bounces an authenticated non-admin away from admin-only routes to the dashboard',
+      groups: ['capataz-operator'] as Role[],
+      path: '/catalog',
+      expectedName: 'dashboard',
+    },
+    {
+      description: 'lets an admin reach admin-only routes',
+      groups: ['capataz-admin'] as Role[],
+      path: '/audit',
+      expectedName: 'audit',
+    },
+  ])('$description', async ({ groups, path, expectedName }) => {
     const auth = useAuthStore()
     auth.devMockEnabled = false
     auth.loadPromise = Promise.resolve()
     auth.isLoggedIn = true
     auth.initialized = true
-    auth.groups = ['capataz-viewer']
+    auth.groups = groups
 
-    await router.push('/executions')
+    await router.push(path)
 
-    expect(router.currentRoute.value.name).toBe('executions')
-  })
-
-  it('bounces an authenticated non-admin away from admin-only routes to the dashboard', async () => {
-    const auth = useAuthStore()
-    auth.devMockEnabled = false
-    auth.loadPromise = Promise.resolve()
-    auth.isLoggedIn = true
-    auth.initialized = true
-    auth.groups = ['capataz-operator']
-
-    await router.push('/catalog')
-
-    expect(router.currentRoute.value.name).toBe('dashboard')
-  })
-
-  it('lets an admin reach admin-only routes', async () => {
-    const auth = useAuthStore()
-    auth.devMockEnabled = false
-    auth.loadPromise = Promise.resolve()
-    auth.isLoggedIn = true
-    auth.initialized = true
-    auth.groups = ['capataz-admin']
-
-    await router.push('/audit')
-
-    expect(router.currentRoute.value.name).toBe('audit')
+    expect(router.currentRoute.value.name).toBe(expectedName)
   })
 
   it('dev_mode bypasses the login redirect even without an explicit "logged in" flag', async () => {

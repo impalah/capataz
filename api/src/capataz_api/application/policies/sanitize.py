@@ -4,7 +4,9 @@ from typing import Any
 SENSITIVE_KEY = re.compile(
     r"(secret|token|password|authorization|api[_-]?key|private[_-]?key|vault)", re.I
 )
-TOKEN_VALUE = re.compile(r"(?i)(bearer\s+)[^\s]+|\b(?:eyJ[a-zA-Z0-9_=\-]+\.){2}[a-zA-Z0-9_=\-]+\b")
+# The base64url alphabet a JWT segment (header/payload/signature) is written in.
+_JWT_SEGMENT = r"[a-zA-Z0-9_=\-]+"
+TOKEN_VALUE = re.compile(rf"(?i)(bearer\s+)[^\s]+|\b(?:eyJ{_JWT_SEGMENT}\.){{2}}{_JWT_SEGMENT}\b")
 
 
 def sanitize(value: Any) -> Any:

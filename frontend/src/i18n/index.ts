@@ -45,9 +45,9 @@ export function detectBrowserLocale(
   const normalized = candidates.map((candidate) => candidate.toLowerCase())
   const exact = SUPPORTED_LOCALES.find((locale) => normalized.includes(locale.toLowerCase()))
   if (exact) return exact
-  const languageOnly = normalized.map((candidate) => candidate.split('-')[0] ?? candidate)
+  const languageOnly = new Set(normalized.map((candidate) => candidate.split('-')[0] ?? candidate))
   const partial = SUPPORTED_LOCALES.find((locale) =>
-    languageOnly.includes((locale.split('-')[0] ?? locale).toLowerCase()),
+    languageOnly.has((locale.split('-')[0] ?? locale).toLowerCase()),
   )
   return partial ?? FALLBACK_LOCALE
 }

@@ -87,47 +87,92 @@ def service_reference_errors(
     return errors
 
 
+def _resource_field_error(
+    field_name: str,
+    resource_id: str,
+    expected: ResourceType,
+    actual: ResourceType | None,
+    prefix: str,
+) -> FieldError | None:
+    path = f"{prefix}config.{field_name}"
+    if actual is None:
+        return FieldError(path, f"resource {resource_id!r} does not exist")
+    if actual != expected:
+        return FieldError(
+            path, f"resource {resource_id!r} is of type {actual.value}, expected {expected.value}"
+        )
+    return None
+
+
+def _resource_reference_errors(
+    connector: ConnectorSpec, resource_types: Mapping[str, ResourceType], prefix: str
+) -> list[FieldError]:
+    """Every config field referencing a resource points at one that exists and has that type."""
+    errors = (
+        _resource_field_error(
+            field_name, resource_id, expected, resource_types.get(resource_id), prefix
+        )
+        for field_name, (resource_id, expected) in connector_resource_refs(connector).items()
+    )
+    return [error for error in errors if error is not None]
+
+
+def _connector_url_error(
+    connector: ConnectorSpec, allowed_suffixes: tuple[str, ...], prefix: str
+) -> FieldError | None:
+    url = getattr(connector.config, "url", None)
+    if url is None:
+        return None
+    try:
+        validate_outbound_url(str(url), allowed_suffixes, "Connector")
+    except ValidationError as exc:
+        return FieldError(f"{prefix}config.url", str(exc))
+    return None
+
+
+def _http_suffix_errors(
+    connector: ConnectorSpec, allowed_suffixes: tuple[str, ...], prefix: str
+) -> list[FieldError]:
+    """An http connector's own allow-list may only narrow the global SSRF ceiling."""
+    if not isinstance(connector, HttpConnector):
+        return []
+    return [
+        FieldError(
+            f"{prefix}config.allowed_host_suffixes.{index}",
+            f"{suffix!r} is outside CAPATAZ_HEALTH_ALLOWED_HOST_SUFFIXES",
+        )
+        for index, suffix in enumerate(connector.config.allowed_host_suffixes)
+        if not suffix_within(suffix, allowed_suffixes)
+    ]
+
+
+def _ssh_host_error(
+    connector: ConnectorSpec, allowed_suffixes: tuple[str, ...], prefix: str
+) -> FieldError | None:
+    if not isinstance(connector, SshConnector):
+        return None
+    try:
+        validate_outbound_host(connector.config.host, allowed_suffixes, "SSH")
+    except ValidationError as exc:
+        return FieldError(f"{prefix}config.host", str(exc))
+    return None
+
+
 def connector_reference_errors(
     connector: ConnectorSpec,
     resource_types: Mapping[str, ResourceType],
     allowed_suffixes: tuple[str, ...],
     prefix: str = "",
 ) -> list[FieldError]:
-    errors: list[FieldError] = []
-    for field_name, (resource_id, expected) in connector_resource_refs(connector).items():
-        actual = resource_types.get(resource_id)
-        path = f"{prefix}config.{field_name}"
-        if actual is None:
-            errors.append(FieldError(path, f"resource {resource_id!r} does not exist"))
-        elif actual != expected:
-            errors.append(
-                FieldError(
-                    path,
-                    f"resource {resource_id!r} is of type {actual.value}, "
-                    f"expected {expected.value}",
-                )
-            )
-    url = getattr(connector.config, "url", None)
-    if url is not None:
-        try:
-            validate_outbound_url(str(url), allowed_suffixes, "Connector")
-        except ValidationError as exc:
-            errors.append(FieldError(f"{prefix}config.url", str(exc)))
-    if isinstance(connector, HttpConnector):
-        for index, suffix in enumerate(connector.config.allowed_host_suffixes):
-            if not suffix_within(suffix, allowed_suffixes):
-                errors.append(
-                    FieldError(
-                        f"{prefix}config.allowed_host_suffixes.{index}",
-                        f"{suffix!r} is outside CAPATAZ_HEALTH_ALLOWED_HOST_SUFFIXES",
-                    )
-                )
-    if isinstance(connector, SshConnector):
-        try:
-            validate_outbound_host(connector.config.host, allowed_suffixes, "SSH")
-        except ValidationError as exc:
-            errors.append(FieldError(f"{prefix}config.host", str(exc)))
-    return errors
+    optional_errors = (
+        _connector_url_error(connector, allowed_suffixes, prefix),
+        _ssh_host_error(connector, allowed_suffixes, prefix),
+    )
+    return [
+        *_resource_reference_errors(connector, resource_types, prefix),
+        *(error for error in optional_errors if error is not None),
+        *_http_suffix_errors(connector, allowed_suffixes, prefix),
+    ]
 
 
 def action_reference_errors(

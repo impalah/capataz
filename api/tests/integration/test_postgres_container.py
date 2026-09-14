@@ -11,6 +11,6 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_testcontainers_path_is_available() -> None:
-    from testcontainers.postgres import PostgresContainer
+    from testcontainers.community.postgres import PostgresContainer
 
     assert PostgresContainer is not None

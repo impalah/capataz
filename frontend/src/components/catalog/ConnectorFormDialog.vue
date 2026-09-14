@@ -73,19 +73,25 @@ const typeOptions = computed(() =>
   connectorTypes.map((value) => ({ label: t(`enums.connectorType.${value}`), value })),
 )
 
+const initialBoolValue = (field: FieldDef, value: unknown): boolean =>
+  typeof value === 'boolean' ? value : field.initial === true
+const initialNumberValue = (field: FieldDef, value: unknown): number | null => {
+  if (typeof value === 'number') return value
+  return typeof field.initial === 'number' ? field.initial : null
+}
+const initialSuffixesValue = (value: unknown): string => (Array.isArray(value) ? value.join(', ') : '')
+const initialTextValue = (value: unknown): string => (typeof value === 'string' ? value : '')
+
 const loadConfig = (connectorType: ConnectorType, config: Record<string, unknown> = {}) => {
   text.value = {}
   numbers.value = {}
   flags.value = {}
   for (const field of FIELDS[connectorType]) {
     const value = config[field.key]
-    if (field.kind === 'bool')
-      flags.value[field.key] = typeof value === 'boolean' ? value : field.initial === true
-    else if (field.kind === 'number')
-      numbers.value[field.key] =
-        typeof value === 'number' ? value : typeof field.initial === 'number' ? field.initial : null
-    else if (field.kind === 'suffixes') text.value[field.key] = Array.isArray(value) ? value.join(', ') : ''
-    else text.value[field.key] = typeof value === 'string' ? value : ''
+    if (field.kind === 'bool') flags.value[field.key] = initialBoolValue(field, value)
+    else if (field.kind === 'number') numbers.value[field.key] = initialNumberValue(field, value)
+    else if (field.kind === 'suffixes') text.value[field.key] = initialSuffixesValue(value)
+    else text.value[field.key] = initialTextValue(value)
   }
 }
 const load = () => {

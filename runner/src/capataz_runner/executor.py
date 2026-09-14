@@ -10,7 +10,7 @@ import shlex
 import shutil
 import signal
 import tempfile
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -54,7 +54,7 @@ _NEWLINE_TERMINATED = frozenset({"private_key", "known_hosts"})
 
 
 @contextlib.contextmanager
-def materialized_secrets(secrets: Mapping[str, bytes]) -> Iterator[dict[str, Path]]:
+def materialized_secrets(secrets: Mapping[str, bytes]) -> Generator[dict[str, Path]]:
     """Write decrypted resources to owner-only files for the duration of one execution.
 
     ansible-playbook/ssh only take key, known_hosts and vault material as file paths. The files

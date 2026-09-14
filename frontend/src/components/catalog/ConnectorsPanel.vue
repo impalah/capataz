@@ -17,8 +17,10 @@ const toDelete = ref<Connector>()
 /** One line telling where the connector points: its URL, user@host or inventory. */
 const target = ({ config }: Connector): string => {
   if (typeof config.url === 'string') return config.url
-  if (typeof config.host === 'string')
-    return `${typeof config.user === 'string' ? `${config.user}@` : ''}${config.host}`
+  if (typeof config.host === 'string') {
+    const userPrefix = typeof config.user === 'string' ? `${config.user}@` : ''
+    return `${userPrefix}${config.host}`
+  }
   return typeof config.inventory === 'string' ? config.inventory : ''
 }
 const newConnector = () => {

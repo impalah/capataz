@@ -5,6 +5,7 @@ Import is all-or-nothing: the whole document — structure, references to connec
 the first write, so an invalid catalog never leaves a half-applied state behind.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,7 @@ import yaml
 from loguru import logger
 from pydantic import ValidationError as PydanticValidationError
 
-from capataz_api.application.dto.catalog import Catalog
+from capataz_api.application.dto.catalog import Catalog, ServiceDefinition
 from capataz_api.application.policies import (
     action_reference_errors,
     connector_reference_errors,
@@ -24,15 +25,17 @@ from capataz_api.domain.entities import ActionDefinition, Connector, Resource, S
 from capataz_api.domain.exceptions import FieldError
 from capataz_api.domain.exceptions import ValidationError as DomainValidationError
 from capataz_api.domain.specs import (
+    ActionSpec,
     ConnectorSpec,
     EnvSource,
     FileSource,
     InlineSource,
     ResourceSource,
+    ResourceSpec,
     connector_type,
     validate_action_config,
 )
-from capataz_api.domain.value_objects import ActionType
+from capataz_api.domain.value_objects import ActionType, ResourceType
 
 CONVERTER_HINT = "convert it with scripts/convert_catalog_v1_to_v2.py"
 
@@ -154,66 +157,104 @@ class _Prepared:
     connector_specs: dict[str, ConnectorSpec]
 
 
-async def _prepare(repo: ServiceRepository, catalog: Catalog, context: CatalogContext) -> _Prepared:
-    db_resources = {resource.id: resource for resource in await repo.list_resources()}
-    db_connectors = {connector.id: connector for connector in await repo.list_connectors()}
-    errors: list[FieldError] = []
-    warnings: list[FieldError] = []
-    contents: dict[str, bytes] = {}
-
-    for index, resource in enumerate(catalog.resources):
-        path = f"resources.{index}"
-        existing = db_resources.get(resource.id)
-        if resource.source is None:
-            if existing is None:
-                errors.append(
-                    FieldError(
-                        path,
-                        f"resource {resource.id!r} has no source and has not been uploaded yet",
-                    )
-                )
-            elif existing.type != resource.type:
-                errors.append(
-                    FieldError(
-                        f"{path}.type",
-                        f"resource {resource.id!r} already exists as {existing.type.value}",
-                    )
-                )
-            continue
-        if isinstance(resource.source, InlineSource):
-            if not context.inline_permitted:
-                errors.append(
-                    FieldError(
-                        f"{path}.source",
-                        "inline resource content is refused in production; set "
-                        "CAPATAZ_ALLOW_INLINE_RESOURCES=true to allow it",
-                    )
-                )
-                continue
-            warnings.append(
-                FieldError(
-                    f"{path}.source",
-                    "inline resource content is meant for development/testing only: it is "
-                    "stored encrypted, but it also sits in clear text in this YAML",
-                )
+def _missing_resource_errors(
+    resource: ResourceSpec, existing: Resource | None, path: str
+) -> list[FieldError]:
+    """A resource declared with no `source` must already exist in the database, same type."""
+    if existing is None:
+        return [
+            FieldError(
+                path, f"resource {resource.id!r} has no source and has not been uploaded yet"
             )
-        try:
-            contents[resource.id] = context.loader.load(resource.source)
-        except DomainValidationError as exc:
-            errors.append(FieldError(f"{path}.source", str(exc)))
+        ]
+    if existing.type != resource.type:
+        return [
+            FieldError(
+                f"{path}.type", f"resource {resource.id!r} already exists as {existing.type.value}"
+            )
+        ]
+    return []
 
-    resource_types = {rid: resource.type for rid, resource in db_resources.items()}
-    resource_types |= {resource.id: resource.type for resource in catalog.resources}
-    connector_specs: dict[str, ConnectorSpec] = {
+
+def _load_resource_content(
+    resource: ResourceSpec, context: CatalogContext, path: str
+) -> tuple[bytes | None, list[FieldError], list[FieldError]]:
+    """Load one resource's declared `source`; returns (content, errors, warnings).
+
+    A permitted inline source is warned about up front, regardless of whether the load that
+    follows succeeds — the warning describes the *source*, not the outcome of loading it.
+    """
+    warnings: list[FieldError] = []
+    if isinstance(resource.source, InlineSource):
+        if not context.inline_permitted:
+            error = FieldError(
+                f"{path}.source",
+                "inline resource content is refused in production; set "
+                "CAPATAZ_ALLOW_INLINE_RESOURCES=true to allow it",
+            )
+            return None, [error], []
+        warnings.append(
+            FieldError(
+                f"{path}.source",
+                "inline resource content is meant for development/testing only: it is stored "
+                "encrypted, but it also sits in clear text in this YAML",
+            )
+        )
+    try:
+        content = context.loader.load(resource.source)
+    except DomainValidationError as exc:
+        return None, [FieldError(f"{path}.source", str(exc))], warnings
+    return content, [], warnings
+
+
+def _prepare_resource(
+    resource: ResourceSpec, existing: Resource | None, context: CatalogContext, index: int
+) -> tuple[bytes | None, list[FieldError], list[FieldError]]:
+    """One catalog resource's (content, errors, warnings); content is None if nothing to store."""
+    path = f"resources.{index}"
+    if resource.source is None:
+        return None, _missing_resource_errors(resource, existing, path), []
+    return _load_resource_content(resource, context, path)
+
+
+def _resource_types(
+    db_resources: Mapping[str, Resource], resources: list[ResourceSpec]
+) -> dict[str, ResourceType]:
+    types = {rid: resource.type for rid, resource in db_resources.items()}
+    types |= {resource.id: resource.type for resource in resources}
+    return types
+
+
+def _connector_specs(
+    db_connectors: Mapping[str, Connector], connectors: list[ConnectorSpec]
+) -> dict[str, ConnectorSpec]:
+    specs: dict[str, ConnectorSpec] = {
         cid: connector.spec for cid, connector in db_connectors.items()
     }
-    connector_specs |= {connector.id: connector for connector in catalog.connectors}
+    specs |= {connector.id: connector for connector in connectors}
+    return specs
 
-    for index, connector in enumerate(catalog.connectors):
+
+def _all_connector_errors(
+    connectors: list[ConnectorSpec],
+    resource_types: Mapping[str, ResourceType],
+    context: CatalogContext,
+) -> list[FieldError]:
+    errors: list[FieldError] = []
+    for index, connector in enumerate(connectors):
         errors += connector_reference_errors(
             connector, resource_types, context.allowed_suffixes, f"connectors.{index}."
         )
-    for index, service in enumerate(catalog.services):
+    return errors
+
+
+def _all_service_and_action_errors(
+    services: list[ServiceDefinition],
+    connector_specs: Mapping[str, ConnectorSpec],
+    context: CatalogContext,
+) -> list[FieldError]:
+    errors: list[FieldError] = []
+    for index, service in enumerate(services):
         prefix = f"services.{index}."
         errors += service_reference_errors(
             service, connector_specs, context.allowed_suffixes, prefix
@@ -222,7 +263,149 @@ async def _prepare(repo: ServiceRepository, catalog: Catalog, context: CatalogCo
             errors += action_reference_errors(
                 action, service, connector_specs, f"{prefix}actions.{action_index}."
             )
+    return errors
+
+
+async def _prepare(repo: ServiceRepository, catalog: Catalog, context: CatalogContext) -> _Prepared:
+    db_resources = {resource.id: resource for resource in await repo.list_resources()}
+    db_connectors = {connector.id: connector for connector in await repo.list_connectors()}
+
+    errors: list[FieldError] = []
+    warnings: list[FieldError] = []
+    contents: dict[str, bytes] = {}
+    for index, resource in enumerate(catalog.resources):
+        content, resource_errors, resource_warnings = _prepare_resource(
+            resource, db_resources.get(resource.id), context, index
+        )
+        errors += resource_errors
+        warnings += resource_warnings
+        if content is not None:
+            contents[resource.id] = content
+
+    resource_types = _resource_types(db_resources, catalog.resources)
+    connector_specs = _connector_specs(db_connectors, catalog.connectors)
+    errors += _all_connector_errors(catalog.connectors, resource_types, context)
+    errors += _all_service_and_action_errors(catalog.services, connector_specs, context)
     return _Prepared(errors, warnings, contents, db_resources, db_connectors, connector_specs)
+
+
+def _resource_record(
+    resource: ResourceSpec,
+    existing: Resource | None,
+    content: bytes | None,
+    context: CatalogContext,
+) -> Resource | None:
+    """The `Resource` row to upsert for one catalog resource, or None if nothing changed."""
+    if content is None:
+        # No source (already uploaded): only its description can change from the catalog.
+        assert existing is not None
+        if existing.description == resource.description:
+            return None
+        existing.description = resource.description
+        return existing
+    assert resource.source is not None
+    fingerprint = context.cipher.fingerprint(content)
+    provenance = _provenance(resource.source)
+    if existing is not None and (
+        existing.fingerprint,
+        existing.type,
+        existing.description,
+        existing.source,
+    ) == (fingerprint, resource.type, resource.description, provenance):
+        return None
+    return Resource(
+        id=resource.id,
+        type=resource.type,
+        ciphertext=context.cipher.encrypt(content),
+        fingerprint=fingerprint,
+        size=len(content),
+        description=resource.description,
+        source=provenance,
+    )
+
+
+async def _write_resources(
+    repo: ServiceRepository,
+    resources: list[ResourceSpec],
+    prepared: _Prepared,
+    context: CatalogContext,
+    dry_run: bool,
+    counts: dict[str, int],
+) -> None:
+    for resource in resources:
+        existing = prepared.db_resources.get(resource.id)
+        record = _resource_record(resource, existing, prepared.contents.get(resource.id), context)
+        if record is None:
+            counts["unchanged"] += 1
+            continue
+        counts["updated" if existing else "created"] += 1
+        if not dry_run:
+            await repo.upsert_resource(record)
+
+
+async def _write_connectors(
+    repo: ServiceRepository,
+    connectors: list[ConnectorSpec],
+    db_connectors: Mapping[str, Connector],
+    dry_run: bool,
+    counts: dict[str, int],
+) -> None:
+    for connector in connectors:
+        counts["updated" if connector.id in db_connectors else "created"] += 1
+        if not dry_run:
+            await repo.upsert_connector(Connector(spec=connector))
+
+
+async def _upsert_action(
+    repo: ServiceRepository,
+    service_id: str,
+    action: ActionSpec,
+    connector_specs: Mapping[str, ConnectorSpec],
+) -> None:
+    kind = connector_type(connector_specs[action.connector])
+    # Reuse the existing action's id (the real business key is (service_id, key), not id) so
+    # re-importing the same catalog stays idempotent instead of generating a fresh UUID per
+    # import and orphaning any Execution.action_definition_id FK.
+    existing_action = await repo.get_action(service_id, action.key)
+    fields = action.model_dump(exclude={"connector"})
+    fields["config"] = validate_action_config(kind, action.config)
+    if existing_action is not None:
+        fields["id"] = existing_action.id
+    await repo.upsert_action(
+        ActionDefinition(
+            service_id=service_id,
+            connector_id=action.connector,
+            action_type=ActionType(kind.value),
+            **fields,
+        )
+    )
+
+
+async def _write_service(
+    repo: ServiceRepository,
+    item: ServiceDefinition,
+    connector_specs: Mapping[str, ConnectorSpec],
+    dry_run: bool,
+) -> bool:
+    """Upsert one service and its actions; returns whether the service already existed."""
+    exists = await repo.get_service(item.id) is not None
+    if not dry_run:
+        await repo.upsert_service(Service(id=item.id, spec=item.to_spec()))
+        for action in item.actions:
+            await _upsert_action(repo, item.id, action, connector_specs)
+    return exists
+
+
+async def _write_services(
+    repo: ServiceRepository,
+    services: list[ServiceDefinition],
+    connector_specs: Mapping[str, ConnectorSpec],
+    dry_run: bool,
+    counts: dict[str, int],
+) -> None:
+    for item in services:
+        exists = await _write_service(repo, item, connector_specs, dry_run)
+        counts["updated" if exists else "created"] += 1
 
 
 async def _write(
@@ -236,74 +419,13 @@ async def _write(
         kind: {"created": 0, "updated": 0, "unchanged": 0}
         for kind in ("resources", "connectors", "services")
     }
-
-    for resource in catalog.resources:
-        existing = prepared.db_resources.get(resource.id)
-        content = prepared.contents.get(resource.id)
-        if content is None:
-            # No source (already uploaded): only its description can change from the catalog.
-            assert existing is not None
-            if existing.description == resource.description:
-                counts["resources"]["unchanged"] += 1
-                continue
-            existing.description = resource.description
-            record = existing
-        else:
-            assert resource.source is not None
-            fingerprint = context.cipher.fingerprint(content)
-            provenance = _provenance(resource.source)
-            if existing is not None and (
-                existing.fingerprint,
-                existing.type,
-                existing.description,
-                existing.source,
-            ) == (fingerprint, resource.type, resource.description, provenance):
-                counts["resources"]["unchanged"] += 1
-                continue
-            record = Resource(
-                id=resource.id,
-                type=resource.type,
-                ciphertext=context.cipher.encrypt(content),
-                fingerprint=fingerprint,
-                size=len(content),
-                description=resource.description,
-                source=provenance,
-            )
-        counts["resources"]["updated" if existing else "created"] += 1
-        if not dry_run:
-            await repo.upsert_resource(record)
-
-    for connector in catalog.connectors:
-        counts["connectors"][
-            "updated" if connector.id in prepared.db_connectors else "created"
-        ] += 1
-        if not dry_run:
-            await repo.upsert_connector(Connector(spec=connector))
-
-    for item in catalog.services:
-        exists = await repo.get_service(item.id) is not None
-        counts["services"]["updated" if exists else "created"] += 1
-        if dry_run:
-            continue
-        await repo.upsert_service(Service(id=item.id, spec=item.to_spec()))
-        for action in item.actions:
-            kind = connector_type(prepared.connector_specs[action.connector])
-            # Reuse the existing action's id (the real business key is (service_id, key), not
-            # id) so re-importing the same catalog stays idempotent instead of generating a
-            # fresh UUID per import and orphaning any Execution.action_definition_id FK.
-            existing_action = await repo.get_action(item.id, action.key)
-            fields = action.model_dump(exclude={"connector"})
-            fields["config"] = validate_action_config(kind, action.config)
-            if existing_action is not None:
-                fields["id"] = existing_action.id
-            await repo.upsert_action(
-                ActionDefinition(
-                    service_id=item.id,
-                    connector_id=action.connector,
-                    action_type=ActionType(kind.value),
-                    **fields,
-                )
-            )
+    await _write_resources(repo, catalog.resources, prepared, context, dry_run, counts["resources"])
+    await _write_connectors(
+        repo, catalog.connectors, prepared.db_connectors, dry_run, counts["connectors"]
+    )
+    await _write_services(
+        repo, catalog.services, prepared.connector_specs, dry_run, counts["services"]
+    )
     return counts
 
 

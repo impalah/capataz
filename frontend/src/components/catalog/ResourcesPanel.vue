@@ -46,12 +46,13 @@ const openDialog = (resource?: Resource) => {
   content.value = ''
   dialog.value = true
 }
+const resourceBytes = async (): Promise<Uint8Array | undefined> => {
+  if (file.value) return new Uint8Array(await file.value.arrayBuffer())
+  if (content.value) return new TextEncoder().encode(content.value)
+  return undefined
+}
 const encodeContent = async (): Promise<string | undefined> => {
-  const bytes = file.value
-    ? new Uint8Array(await file.value.arrayBuffer())
-    : content.value
-      ? new TextEncoder().encode(content.value)
-      : undefined
+  const bytes = await resourceBytes()
   if (!bytes?.length) {
     Notify.create({ type: 'negative', message: t('pages.catalog.resources.contentRequired') })
     return undefined

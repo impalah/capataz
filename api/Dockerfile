@@ -6,7 +6,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY src ./src
 RUN uv sync --frozen --no-dev
 
-FROM python:3.14-slim-trixie
+FROM python:3.15-slim-trixie
 # Runtime only ever runs uvicorn from the already-built /app/.venv — it never invokes pip. The
 # base image's own system Python still ships pip/setuptools/wheel (vendoring their own copies of
 # transitive libs like msgpack), which are unused here but do show up as fixable CVEs in image
